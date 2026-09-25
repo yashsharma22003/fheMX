@@ -11,7 +11,8 @@ Deferred on purpose; fix as the relevant code is written. When a test harness ex
 | 3 | D4 | `rearm()` doesn't restate the execute-time checks; the user can reduce the position between cancel and re-arm. | `rearm()` applies the same checks as `execute()` (public caps, live-position size trim). | Re-arm after a manual partial close. |
 | 4 | §4 step 3 | "`valid` cannot go stale" is only true for increase orders. | Wording only. | — |
 
-| 8 | Milestones 2–4 | The minimal clone used for the first demo has no callback authentication, owner withdraw or cancel. It must not be deployed beyond tests. | Milestone 5: callbacks only from GMX `CONTROLLER` holders and only for the clone's own order keys; owner paths. | A callback from a non-CONTROLLER address is rejected (write it failing in milestone 2). |
+| 8 | Milestones 2–4 | The clone has no owner cancel or manual close of GMX orders/positions, and supports native-ETH collateral only. Callback authentication is done (milestone 2). | Milestone 5: owner cancel and manual close, ERC20 collateral (USDC.SG) via token approval. | Owner cancels a pending GMX order after the request-expiration delay. |
+| 9 | Clone, fee model | The clone learns GMX outcomes only from callbacks. A lost callback leaves the order `Pending`: the lock can't be released and the protocol fee can't be collected, contradicting "settlement never depends on the callback". | Milestone 5: permissionless `reconcile(orderId)` that infers the outcome from GMX state (order gone + position changed, or order gone + collateral returned). | Callback forced to revert; reconcile recovers both outcomes and the fee is still collected. |
 
 ## Environment
 

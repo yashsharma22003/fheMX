@@ -30,7 +30,7 @@ Six corrections change the design; the rest are wording and trust-model fixes.
 
 ## Open decisions (recommended defaults)
 
-Five design forks must be settled before code starts. Each has a recommended default below; the rest of this doc assumes those defaults. D3 and D4 interact most: the report-submission rules in D3 set how often D4's failure path is hit.
+Six design forks must be settled before code starts (D6 added 2026-09-25). Each has a recommended default below; the rest of this doc assumes those defaults. D3 and D4 interact most: the report-submission rules in D3 set how often D4's failure path is hit.
 
 | # | Decision | Recommended default | Main alternative | Depends on |
 | --- | --- | --- | --- | --- |
@@ -39,6 +39,7 @@ Five design forks must be settled before code starts. Each has a recommended def
 | D3 | Who runs trigger checks | Permissionless, with on-chain rate limit and Data Streams report rules | Restricted to a designated keeper set | D1 |
 | D4 | Triggered order fails its slippage bound | Re-arm once, in a separate permissionless transaction, with a wider public bound; then leave the revealed order to the user | Accept the reveal and stop | D3 |
 | D5 | Lead use case | Limit-entry privacy | Stop-loss / take-profit privacy | D1 |
+| D6 | Fee model | Notional fee on increase-order fill (placeholder 8–15 bps), minimal or zero on decrease fills, charged only on success, check-fee spread as secondary revenue. Full spec: [fee-model.md](fee-model.md) | Flat fee on all orders; fee at intake | §10, D5 |
 
 ### D1 — Market field: public
 
@@ -325,6 +326,12 @@ Private-RPC submission is removed: it addresses an Ethereum mempool Arbitrum doe
 3. **Relayer-based submission.** Removes the user's address from the deposit and order trail.
 4. **Fixed collateral denominations per order, plus withdrawal delay.** Narrows locked-collateral leakage.
 5. **Pooled account with netting and internal liquidation.** Largest item; justified only once volume supports a meaningful batch size.
+
+---
+
+## 12. Fee model
+
+Specified in [fee-model.md](fee-model.md) (D6). The fee is reserved in the user clone at lock, sized from the maximum possible order so it reveals nothing, and paid to an immutable, receive-only collector only after GMX reports the order executed.
 
 ---
 

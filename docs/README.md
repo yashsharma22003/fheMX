@@ -6,6 +6,7 @@ Reference for the Sealed Order Privacy Layer. Current as of 2026-09-24.
 | --- | --- |
 | [design-v0.2.md](design-v0.2.md) | The protocol: what it protects, architecture, order lifecycle, what stays sealed, trust model, limitations, open decisions with defaults. **Start here.** |
 | [decisions.md](decisions.md) | Every decision and why, what it replaced, and assumptions that turned out wrong. |
+| [fee-model.md](fee-model.md) | Fee model (D6): the spec as received, plus implementation notes on where the build differs and which milestone builds each part. |
 | [build-plan.md](build-plan.md) | What's done, the proposed milestone order, open planning questions. |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Deferred design gaps and environment gaps, each with its fix. |
 | [integration/gmx-v2.md](integration/gmx-v2.md) | GMX V2: live Sepolia addresses and how to re-verify them, tokens and markets, protocol behaviour we depend on, copied interfaces. |
@@ -18,8 +19,8 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources. Four small gaps deferred (known issues 1–4).
-- **Build:** milestone 1 done: real GMX orders created, cancelled and executed on an Arbitrum Sepolia fork, with a reusable keeper simulator. No adapter code yet.
-- **Next:** milestone 2 (`IUserAccount` and the minimal clone), per [build-plan.md](build-plan.md).
+- **Build:** milestones 1–2 done: real GMX orders created, cancelled and executed on a fork; per-user clone accounts with locks, fee reserve and authenticated callbacks. No adapter (FHE) code yet.
+- **Next:** milestone 3 (sealed intake), per [build-plan.md](build-plan.md).
 
 ## Key facts
 

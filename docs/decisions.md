@@ -25,6 +25,12 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-25 | — | Build order: interface-first. `IUserAccount` and a minimal clone (milestone 2) before sealed intake and the end-to-end demo (3–4); full clone after (5). | Earlier end-to-end demo of the novel FHE path without throwaway code: the adapter codes against the interface, and the clone is completed behind it. | Proposed order with the full clone before sealed intake. |
 | 2026-09-25 | — | First demo covers limit entries only. | Strongest privacy case (D5); decrease orders need the size-trim and re-arm work. | — |
 
+| 2026-09-25 | D6 | Fee model: fee on successful fill only, increase/decrease split, immutable public parameters, receive-only collector. Spec in [fee-model.md](fee-model.md). | Covers operating costs without charging for orders that never fire, without a new admin key, and without leaking anything before reveal. | — |
+| 2026-09-25 | — | Protocol fee is reserved in the clone at lock, sized from the maximum possible order (locked collateral × max leverage × bps), and paid only after `Executed`. | A limit-entry fill leaves no proceeds in the clone to sweep from, and a reserve sized from the real order would publish the sealed size. | Fee spec §5: sweep from settled proceeds. |
+| 2026-09-25 | — | Fee amount computed at execute from the revealed size and the verified reference price, not from callback event data. | Callbacks only record outcomes; GMX market increases fill in full or cancel, so revealed size = filled size. | Fee spec §5: `filledSizeUsd` from `afterOrderExecution`. |
+| 2026-09-25 | — | Clone interface `IUserAccount`: the clone builds GMX order parameters itself and always routes receiver, cancellation receiver and callbacks to itself; outcomes are pull-based (`outcomeOf`); adapter fixed at creation. | The clone enforces "funds return to the user" even against a faulty adapter; no calls into the adapter from gas-capped GMX callbacks. | — |
+| 2026-09-25 | — | Callback authentication (GMX `CONTROLLER` + own order keys) built in milestone 2 instead of 5. | Three lines; removes the riskiest part of known issue 8 early. | Milestone 5 plan. |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.
