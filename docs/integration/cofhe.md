@@ -34,10 +34,10 @@ Verified by `contracts/test/unit/CofheToolchain.t.sol`.
 
 | Step | Call | Notes |
 | --- | --- | --- |
-| Accept encrypted input | `FHE.asEuint64(externalEuint64 handle, bytes proof)` | Batch form `asEuint64s(handles[], signature)` shares one signature. Proof is bound to sender, chain and this contract. |
+| Accept encrypted input | `FHE.asEbool` / `asEuint32` / `asEuint64(external…, proof)` | One proof per input when types differ; batch form `asEuint64s(handles[], signature)` shares one signature for same-typed inputs. Proof is bound to sender and consuming contract: a mismatch reverts `InvalidSigner` (verified in `SealedOrderAdapterIntake.t.sol`). |
 | Keep access to a value | `FHE.allowThis(x)` | Needed on every stored handle. |
 | Grant a user access | `FHE.allow(x, user)` | For the order owner to view their own order. |
-| Compare / select | `FHE.gte`, `FHE.lte`, `FHE.select(cond, a, b)`, `FHE.asEuint64(uint)` for constants | `select(fired, field, 0)` is the reveal-if-fired pattern. |
+| Compare / select | `FHE.gte`, `FHE.lte`, `FHE.gt`, `FHE.and`, `FHE.select(cond, a, b)`, `FHE.asEuint64(uint)` / `asEuint32(uint)` for constants | `select(fired, field, 0)` is the reveal-if-fired pattern. |
 | Make decryptable by anyone | `FHE.allowPublic(x)` (or `allowGlobal`) | Lets any checker call `decryptForTx` without a permit. |
 | Post a decryption on-chain | `FHE.publishDecryptResult(x, value, signature)` | Typed overloads exist per encrypted type; batch form `publishDecryptResultBatch`. Signature is Teecryptor's (mock signer in tests). |
 | Read it | `FHE.getDecryptResultSafe(x)` → `(value, decrypted)` | `decrypted` is false until published. |
@@ -61,6 +61,8 @@ In Foundry tests, `CofheClient.decryptForTx_withoutACP(ctHash)` returns `(ctHash
 - Our own rule on top: the adapter never takes a handle as a function parameter and only operates on handles it created from that user's verified input. Required test: user B can't get user A's handle decrypted.
 
 ## Testing
+
+- Grant checks in tests: `mockAcl.isAllowed(uint256(handle), account)` and `mockAcl.globalAllowed(uint256(handle))`.
 
 - **Local:** inherit `CofheTest`, call `deployMocks()` in `setUp`, `createCofheClient()` then `client.connect(pkey)`. `client.createExternalEuint64(value, consumingContract)` makes a bound input. `expectPlaintext` / `getPlaintext` read mock plaintexts.
 - Under forge ≥ 1.0 the mocks exclude their own work from gas metering, so gas reports approximate real costs.

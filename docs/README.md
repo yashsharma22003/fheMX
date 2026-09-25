@@ -19,8 +19,8 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources. Four small gaps deferred (known issues 1–4).
-- **Build:** milestones 1–2 done: real GMX orders created, cancelled and executed on a fork; per-user clone accounts with locks, fee reserve and authenticated callbacks. No adapter (FHE) code yet.
-- **Next:** milestone 3 (sealed intake), per [build-plan.md](build-plan.md).
+- **Build:** milestones 1–3 done: real GMX orders on a fork; per-user clone accounts; sealed intake with encrypted cap checks and replay protection.
+- **Next:** milestone 4 (trigger check → execute, the end-to-end demo), per [build-plan.md](build-plan.md).
 
 ## Key facts
 

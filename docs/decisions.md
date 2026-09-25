@@ -31,6 +31,10 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-25 | — | Clone interface `IUserAccount`: the clone builds GMX order parameters itself and always routes receiver, cancellation receiver and callbacks to itself; outcomes are pull-based (`outcomeOf`); adapter fixed at creation. | The clone enforces "funds return to the user" even against a faulty adapter; no calls into the adapter from gas-capped GMX callbacks. | — |
 | 2026-09-25 | — | Callback authentication (GMX `CONTROLLER` + own order keys) built in milestone 2 instead of 5. | Three lines; removes the riskiest part of known issue 8 early. | Milestone 5 plan. |
 
+| 2026-09-25 | — | Intake applies only price-independent caps on ciphertext (min/max size, max slippage, non-zero trigger). The leverage cap (size ≤ collateral value × max leverage) moves into every trigger check, against the verified report price. | Collateral is ETH; its USD value needs a price, and there is none at intake. Checking at fire time also matches GMX, which checks leverage at execution. A failing order still reveals nothing: it never fires. | Design §4 step 3: leverage and collateral caps at intake. |
+| 2026-09-25 | — | Encrypted fixed-point formats: size in USD with 6 decimals (`euint64`, ×1e24 for GMX), trigger price in USD with 8 decimals (`euint64`), slippage in bps (`euint32`), side as `ebool`. | Keeps every value in 64 bits or less (cheaper FHE ops) with ranges far beyond the caps: up to $1.8e13 size and $1.8e11 price. | — |
+| 2026-09-25 | — | The adapter deploys its own `UserAccountFactory` in its constructor, and creates a user's account on their first order. Users fund the predicted account address beforehand. | Removes the adapter/factory circular dependency and a separate "create account" step. | — |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

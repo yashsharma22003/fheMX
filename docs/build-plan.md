@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-25: milestones 1 and 2 done; milestone 3 next.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-25: milestones 1–3 done; milestone 4 (end-to-end demo) next.
 
 ## Done: setup
 
@@ -20,6 +20,12 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Locks for collateral, two execution fees (D4) and the protocol-fee reserve (D6); `submit` builds GMX params itself and always routes funds and callbacks to the clone; callbacks record outcomes and accept only GMX `CONTROLLER` holders; cancelled collateral returns under the lock for a re-arm; `positionSizeUsd` reads GMX's DataStore.
 - Tests: 25 unit tests on GMX mocks (`test/unit/UserAccount.t.sol`); 3 fork tests on live GMX (`test/fork/UserAccountGmx.t.sol`) covering fill + fee + release, and cancel + successful second attempt.
 
+## Done: milestone 3, sealed intake
+
+- `contracts/src/adapter/SealedOrderAdapter.sol`: `submitOrder` verifies four encrypted inputs (side, size, trigger, slippage) bound to the caller, runs price-independent caps on ciphertext into an encrypted `intakeValid` flag, grants access to the adapter and the owner only, and locks collateral, two execution fees and the max-order fee reserve in the user's account (created on first use). `cancelOrder` releases the lock. All parameters immutable.
+- Tests: 18 unit tests on CoFHE mocks (`test/unit/SealedOrderAdapterIntake.t.sol`), including both replay cases (another user's inputs; inputs bound to another contract), cap boundaries, and that an invalid order looks like any other.
+- Gas on mocks (mock overhead excluded): `submitOrder` ≈ 2.0M including first-time account creation; `cancelOrder` ≈ 60k.
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -28,8 +34,8 @@ Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes b
 | --- | --- | --- | --- |
 | 1 | GMX order round trip, no FHE ✅ | A fork test sends a real market-increase order through the live ExchangeRouter from a test contract acting as the GMX account; a real cancel produces GMX's cancellation callback; a simulated keeper executes the order and produces the execution callback. | `contracts/test/fork`, `test/helpers` |
 | 2 | `IUserAccount` + minimal clone ✅ | Interface for everything the adapter calls on the clone (lock, release, create GMX order, read position, pay protocol fee) and the callbacks it receives. | `contracts/src/account` |
-| 3 | Sealed intake | Adapter accepts encrypted side, size, trigger and slippage, stores handles with the right grants, runs cap checks on ciphertext against the clone's locked collateral. Includes the replay test. | `contracts/src/adapter` |
-| 4 | Trigger check → execute, one order (**demo**) | `checkBatch` with one order and a mocked price report, zero-unless-fired decrypt, publish, `execute` into the clone. A full limit entry works end to end on the fork. Protocol fee (D6) computed at execute and collected after the fill. | `contracts/src/adapter`, `src/oracle` |
+| 3 | Sealed intake ✅ | Adapter accepts encrypted side, size, trigger and slippage, stores handles with the right grants, runs price-independent cap checks on ciphertext. Includes the replay tests. | `contracts/src/adapter` |
+| 4 | Trigger check → execute, one order (**demo**) | `checkBatch` with one order and a mocked price report, zero-unless-fired decrypt, publish, `execute` into the clone. A full limit entry works end to end on the fork. Leverage cap evaluated in the check against the report price. Protocol fee (D6) computed at execute and collected after the fill. | `contracts/src/adapter`, `src/oracle` |
 | 5 | Complete the clone | Owner cancel and manual close, ERC20 collateral, reconcile for lost callbacks. Adapter unchanged. Closes known issues 8 and 9. | `contracts/src/account` |
 | 6 | Data Streams verification | Real report decoding and verification; report-age and increasing-timestamp rules; D3 per-check fee with its spread to the fee collector. Needs credentials. | `contracts/src/oracle` |
 | 7 | Decrease orders and re-arm | Stop-loss and take-profit, live-position size trim, `rearm()`, decrease fee (default 0). Fixes known issues 1–4. | `contracts/src/adapter`, `src/account` |
