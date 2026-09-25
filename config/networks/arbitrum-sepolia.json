@@ -1,0 +1,39 @@
+{
+  "chainId": 421614,
+  "source": {
+    "gmx": "Official GMX docs, https://docs.gmx.io/docs/api/contracts/addresses/ (pinned there to gmx-synthetics commit bf30ebb4cff17b7f92f8c738f145e75b871a1576, 2026-07-24). Checked 2026-09-24: ExchangeRouter and OrderHandler hold CONTROLLER, and this OrderHandler is the one emitting recent events.",
+    "note": "GMX redeploys testnet more often than mainnet. `pnpm test:fork` fails if these stop holding.",
+    "otherLiveControllers": {
+      "comment": "A second router/handler pair also holds CONTROLLER but was nearly idle on 2026-09-24. Not used.",
+      "exchangeRouter": "0x914afAA94eF69F65F2B43C855d7d4E5C59e8aF88",
+      "orderHandler": "0xc63632D7AD3f506081d270A4C3E084f9e76Cee64"
+    }
+  },
+  "gmx": {
+    "dataStore": "0xCF4c2C4c53157BcC01A596e3788fFF69cBBCD201",
+    "eventEmitter": "0xa973c2692C1556E1a3d478e745e9a75624AEDc73",
+    "exchangeRouter": "0x6B489dD5bB1AAE8df246359d59aA7316760a75d2",
+    "orderHandler": "0xC881c2391611829d7bc81c12a285cB0201F08f8c",
+    "orderVault": "0x1b8AC606de71686fd2a1AEDEcb6E0EFba28909a2",
+    "reader": "0x92659fEf40582ceCC3CBa4D096d28291C238D358",
+    "roleStore": "0x433E3C47885b929aEcE4149E3c835E565a20D95c",
+    "router": "0x72F13a44C8ba16a678CAD549F17bc9e06d2B8bD2",
+    "subaccountRouter": "0xAFdD3e0B6c162974594AcA157eA642B8847CC5b1",
+    "glvRouter": "0x792D48B94F430965FE85645cF72527b3343d4BdD"
+  },
+  "tokens": {
+    "WETH": "0x980b62da83eff3d4576c647993b0c1d7faf17c73",
+    "BTC": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
+    "USDC_SG": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773"
+  },
+  "dataStreams": {
+    "verifierProxy": "0x2ff010DEbC1297f19579B4246cad07bd24F2488A",
+    "feeToken": "0xb1D4538B4571d411F07960EF2838Ce337FE1E80E",
+    "feedIds": {
+      "ETH_USD": "0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782",
+      "BTC_USD": "0x00037da06d56d083fe599397a4769a042d63aa73dc4ef57709d31e9971a5b439",
+      "CRV_USD": "0x00037c41d40228ff337f3c7339e635906bb60552d748654fe6f9ebfa6a83fc0e",
+      "USDC_USD": "0x0003dc85e8b01946bf9dfd8b0db860129181eb6105a8c8981d9f28e00b6f60d9"
+    }
+  }
+}

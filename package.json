@@ -1,0 +1,19 @@
+{
+  "name": "sealed-order-gmx",
+  "private": true,
+  "packageManager": "pnpm@10",
+  "scripts": {
+    "build": "pnpm -F contracts build",
+    "test": "pnpm -F contracts test",
+    "test:fork": "pnpm -F contracts test:fork",
+    "typecheck": "pnpm -F checker -F client typecheck"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "@fhenixprotocol/cofhe-contracts"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "contracts",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test --no-match-path 'test/fork/**'",
+    "test:fork": "forge test --match-path 'test/fork/**' --fork-url ${ARBITRUM_SEPOLIA_RPC_URL:-https://sepolia-rollup.arbitrum.io/rpc}"
+  },
+  "devDependencies": {
+    "@cofhe/foundry-plugin": "0.7.1",
+    "@cofhe/mock-contracts": "0.7.1",
+    "@fhenixprotocol/cofhe-contracts": "0.2.0",
+    "@openzeppelin/contracts": "5.4.0",
+    "forge-std": "github:foundry-rs/forge-std#v1.10.0"
+  }
+}
