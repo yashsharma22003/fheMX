@@ -19,12 +19,23 @@
     "roleStore": "0x433E3C47885b929aEcE4149E3c835E565a20D95c",
     "router": "0x72F13a44C8ba16a678CAD549F17bc9e06d2B8bD2",
     "subaccountRouter": "0xAFdD3e0B6c162974594AcA157eA642B8847CC5b1",
-    "glvRouter": "0x792D48B94F430965FE85645cF72527b3343d4BdD"
+    "glvRouter": "0x792D48B94F430965FE85645cF72527b3343d4BdD",
+    "oracle": "0x0dC4e24C63C24fE898Dda574C962Ba7Fbb146964",
+    "wnt": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73"
   },
   "tokens": {
-    "WETH": "0x980b62da83eff3d4576c647993b0c1d7faf17c73",
-    "BTC": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
-    "USDC_SG": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773"
+    "WETH": {
+      "address": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73",
+      "decimals": 18
+    },
+    "BTC": {
+      "address": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
+      "decimals": 8
+    },
+    "USDC_SG": {
+      "address": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773",
+      "decimals": 6
+    }
   },
   "dataStreams": {
     "verifierProxy": "0x2ff010DEbC1297f19579B4246cad07bd24F2488A",
@@ -34,6 +45,20 @@
       "BTC_USD": "0x00037da06d56d083fe599397a4769a042d63aa73dc4ef57709d31e9971a5b439",
       "CRV_USD": "0x00037c41d40228ff337f3c7339e635906bb60552d748654fe6f9ebfa6a83fc0e",
       "USDC_USD": "0x0003dc85e8b01946bf9dfd8b0db860129181eb6105a8c8981d9f28e00b6f60d9"
+    }
+  },
+  "markets": {
+    "ETH_USD": {
+      "marketToken": "0xb6fC4C9eB02C35A134044526C62bb15014Ac0Bcc",
+      "indexToken": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73",
+      "longToken": "0x980B62Da83eFf3D4576C647993b0c1D7faf17c73",
+      "shortToken": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773"
+    },
+    "BTC_USD": {
+      "marketToken": "0x3A83246bDDD60c4e71c91c10D9A66Fd64399bBCf",
+      "indexToken": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
+      "longToken": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
+      "shortToken": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773"
     }
   }
 }

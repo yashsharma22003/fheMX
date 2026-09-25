@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-25: setup done, milestone 1 in progress.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-25: milestone 1 done; milestone 2 next.
 
 ## Done: setup
 
@@ -9,6 +9,10 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Arbitrum Sepolia fork test: GMX contracts deployed, router and handler hold CONTROLLER, router points at the configured handler.
 - GMX and Chainlink interfaces copied and pinned ([integration/gmx-v2.md](integration/gmx-v2.md)).
 - `checker/` and `client/` TypeScript packages with `@cofhe/sdk` and viem, placeholders only.
+
+## Done: milestone 1, GMX order round trip
+
+`contracts/test/fork/GmxOrderRoundTrip.t.sol` (4 tests) against the live Sepolia deployment: our copied `CreateOrderParams` are accepted, early cancel reverts, cancel after expiry produces the cancellation callback and returns collateral, and a simulated keeper execution opens the position, produces the execution callback and refunds the fee. Reusable helpers in `contracts/test/helpers/`: `GmxKeeperSimulator`, `GmxAccountProbe`, `NetworkConfig`, `GmxTestInterfaces`. Details in [integration/gmx-v2.md](integration/gmx-v2.md#verified-on-a-fork-milestone-1).
 
 ## Milestones
 

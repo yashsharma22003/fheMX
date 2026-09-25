@@ -82,8 +82,43 @@ Markets: WETH/WETH-USDC.SG, BTC/BTC-USDC.SG, CRV/WETH-USDC.SG. No Sepolia token 
 
 `OrderType` values we will use: `MarketIncrease` (2), `MarketDecrease` (4). The trigger logic lives in our adapter, so we submit market orders at reveal, not GMX limit or stop types.
 
+## Verified on a fork (milestone 1)
+
+`contracts/test/fork/GmxOrderRoundTrip.t.sol`, 2026-09-25:
+
+- `multicall([sendWnt(orderVault, collateral + fee), createOrder(params)])` with our copied `CreateOrderParams` creates a market-increase order on the live router; the order is stored under the calling contract's account.
+- Cancelling before `REQUEST_EXPIRATION_TIME` reverts with `RequestNotYetCancellable(age, expiration, "Order")`.
+- Cancelling after it calls `afterOrderCancellation` on the callback contract, from a CONTROLLER holder, and returns the collateral as native ETH to `cancellationReceiver` (with `shouldUnwrapNativeToken`).
+- A keeper execution calls `afterOrderExecution` from a CONTROLLER holder, opens the position under the account, clears oracle prices, and refunds unused execution fee through `refundExecutionFee` with ETH attached.
+
+## Keeper simulator (tests only)
+
+Real execution needs signed Data Streams reports, which a fork test can't produce. `contracts/test/helpers/GmxKeeperSimulator.sol` instead:
+
+1. Pranks as the OrderHandler (a CONTROLLER) and calls the Oracle's controller-only `setPrimaryPrice` for each market token and `setTimestamps(now, now)`.
+2. Stubs `Oracle.setPrices` to a no-op with `vm.mockCall`.
+3. Calls `OrderHandler.executeOrder(key, emptyParams)` as the first `ORDER_KEEPER` role member.
+
+Everything after price-setting runs unmodified, including GMX's `clearAllPrices`. Timestamps must satisfy GMX's checks: for market orders, oracle timestamps ≥ the order's `updatedAtTime` and ≤ `updatedAtTime + REQUEST_EXPIRATION_TIME`.
+
+Price units: USD per smallest token unit, scaled so price × amount has 30 decimals. $2,500 ETH (18 decimals) = `2500e12`; $1 USDC (6 decimals) = `1e24`.
+
+## Sepolia parameters (DataStore, read 2026-09-25)
+
+| Key | Value |
+| --- | --- |
+| `WNT` | `0x980B62Da83eFf3D4576C647993b0c1D7faf17c73` (same as WETH) |
+| `REQUEST_EXPIRATION_TIME` | 300 s |
+| `MAX_CALLBACK_GAS_LIMIT` | 2,000,000 |
+| `REFUND_EXECUTION_FEE_GAS_LIMIT` | 200,000 |
+| `MIN_COLLATERAL_USD` | $1 |
+| `MIN_POSITION_SIZE_USD` | $1 |
+| `MAX_DATA_LENGTH` | 32 |
+| Oracle | `0x0dC4e24C63C24fE898Dda574C962Ba7Fbb146964` |
+
+Market tokens: ETH/USD `0xb6fC4C9eB02C35A134044526C62bb15014Ac0Bcc` (long WETH, short USDC.SG); BTC/USD `0x3A83246bDDD60c4e71c91c10D9A66Fd64399bBCf` (long BTC, short USDC.SG). The DataStore market list has 10 markets, all with USDC.SG as short token; the rest aren't in our config yet.
+
 ## Not yet verified
 
-- That `createOrder` with our copied `CreateOrderParams` succeeds against the live router (first integration test; [build-plan.md](../build-plan.md) milestone 1).
-- Keeper liveness and typical execution delay on Sepolia.
-- `maxCallbackGasLimit` and `REFUND_EXECUTION_FEE_GAS_LIMIT` values on the Sepolia DataStore.
+- Keeper liveness and typical execution delay on live Sepolia.
+- Execution with a non-zero gas price (fork tests run at gas price 0, so the whole execution fee is refunded).

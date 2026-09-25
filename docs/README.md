@@ -18,8 +18,8 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources. Four small gaps deferred (known issues 1–4).
-- **Build:** setup done; smoke tests pass on CoFHE mocks and an Arbitrum Sepolia fork. No adapter code yet.
-- **Next:** milestone 1 (GMX order round trip), per the agreed order in [build-plan.md](build-plan.md).
+- **Build:** milestone 1 done: real GMX orders created, cancelled and executed on an Arbitrum Sepolia fork, with a reusable keeper simulator. No adapter code yet.
+- **Next:** milestone 2 (`IUserAccount` and the minimal clone), per [build-plan.md](build-plan.md).
 
 ## Key facts
 

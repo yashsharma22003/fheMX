@@ -12,9 +12,18 @@ library NetworkConfig {
         address exchangeRouter;
         address orderHandler;
         address orderVault;
+        address oracle;
         address reader;
         address roleStore;
         address router;
+        address wnt;
+    }
+
+    struct Market {
+        address marketToken;
+        address indexToken;
+        address longToken;
+        address shortToken;
     }
 
     function arbitrumSepolia() internal view returns (string memory) {
@@ -26,8 +35,18 @@ library NetworkConfig {
         g.exchangeRouter = vm.parseJsonAddress(json, ".gmx.exchangeRouter");
         g.orderHandler = vm.parseJsonAddress(json, ".gmx.orderHandler");
         g.orderVault = vm.parseJsonAddress(json, ".gmx.orderVault");
+        g.oracle = vm.parseJsonAddress(json, ".gmx.oracle");
         g.reader = vm.parseJsonAddress(json, ".gmx.reader");
         g.roleStore = vm.parseJsonAddress(json, ".gmx.roleStore");
         g.router = vm.parseJsonAddress(json, ".gmx.router");
+        g.wnt = vm.parseJsonAddress(json, ".gmx.wnt");
+    }
+
+    function market(string memory json, string memory name) internal pure returns (Market memory m) {
+        string memory base = string.concat(".markets.", name);
+        m.marketToken = vm.parseJsonAddress(json, string.concat(base, ".marketToken"));
+        m.indexToken = vm.parseJsonAddress(json, string.concat(base, ".indexToken"));
+        m.longToken = vm.parseJsonAddress(json, string.concat(base, ".longToken"));
+        m.shortToken = vm.parseJsonAddress(json, string.concat(base, ".shortToken"));
     }
 }
