@@ -66,6 +66,7 @@ In Foundry tests, `CofheClient.decryptForTx_withoutACP(ctHash)` returns `(ctHash
 
 - **Local:** inherit `CofheTest`, call `deployMocks()` in `setUp`, `createCofheClient()` then `client.connect(pkey)`. `client.createExternalEuint64(value, consumingContract)` makes a bound input. `expectPlaintext` / `getPlaintext` read mock plaintexts.
 - Under forge ≥ 1.0 the mocks exclude their own work from gas metering, so gas reports approximate real costs.
+- **On an Arbitrum Sepolia fork:** the live TaskManager (a proxy) sits at the mocks' fixed address, and `deployMocks` replaces code but not storage. Zero slots 0–15 at the fixed CoFHE addresses first, and call `vm.allowCheatcodes` for the two mock signer addresses (they sign with cheatcodes, and Foundry blocks cheatcodes for addresses that exist on the fork). Both are done in `test/helpers/SealedOrderAdapterTestBase.sol`.
 - **Live:** real latency, gas and fees only on Arbitrum Sepolia.
 
 ## Not yet verified

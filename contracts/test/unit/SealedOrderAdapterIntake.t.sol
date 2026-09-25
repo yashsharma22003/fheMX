@@ -1,51 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import {CofheTest} from "@cofhe/foundry-plugin/CofheTest.sol";
 import {CofheClient} from "@cofhe/foundry-plugin/CofheClient.sol";
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {SealedOrderAdapter} from "../../src/adapter/SealedOrderAdapter.sol";
 import {IUserAccount} from "../../src/account/IUserAccount.sol";
 import {UserAccount} from "../../src/account/UserAccount.sol";
 import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore} from "../helpers/GmxMocks.sol";
+import {SealedOrderAdapterTestBase} from "../helpers/SealedOrderAdapterTestBase.sol";
 
 /// @notice Milestone 3: sealed intake on CoFHE mocks.
-contract SealedOrderAdapterIntakeTest is CofheTest {
+contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
     address private constant WNT = address(0x4E7);
     address private constant MARKET = address(0x3A2);
-
-    uint64 private constant MIN_SIZE = 10e6; // $10
-    uint64 private constant MAX_SIZE = 1_000_000e6; // $1m
-    uint32 private constant MAX_SLIPPAGE = 500; // 5%
-    uint32 private constant MAX_FALLBACK_SLIPPAGE = 1_000; // 10%
-    uint16 private constant MAX_LEVERAGE = 10;
-    uint16 private constant FEE_BPS = 10;
-    uint256 private constant MIN_EXEC_FEE = 0.0005 ether;
 
     uint256 private constant COLLATERAL = 1 ether;
     uint256 private constant EXEC_FEE = 0.001 ether;
 
-    uint256 private constant ALICE_PKEY = 0xA11CE;
-    uint256 private constant BOB_PKEY = 0xB0B;
-
-    SealedOrderAdapter private adapter;
-    CofheClient private alice;
-    CofheClient private bob;
-
-    struct Plain {
-        bool isLong;
-        uint64 size;
-        uint64 trigger;
-        uint32 slippage;
-    }
-
     function setUp() public {
-        deployMocks();
-        alice = createCofheClient();
-        alice.connect(ALICE_PKEY);
-        bob = createCofheClient();
-        bob.connect(BOB_PKEY);
-
         UserAccount impl = new UserAccount(
             address(new MockGmxExchangeRouter()),
             address(0x0FA),
@@ -54,50 +26,19 @@ contract SealedOrderAdapterIntakeTest is CofheTest {
             WNT,
             makeAddr("feeCollector")
         );
-        address[] memory markets = new address[](1);
-        markets[0] = MARKET;
-        adapter = new SealedOrderAdapter(
-            SealedOrderAdapter.Config({
-                accountImplementation: address(impl),
-                wnt: WNT,
-                markets: markets,
-                minSizeUsd6: MIN_SIZE,
-                maxSizeUsd6: MAX_SIZE,
-                maxSlippageBps: MAX_SLIPPAGE,
-                maxFallbackSlippageBps: MAX_FALLBACK_SLIPPAGE,
-                maxLeverage: MAX_LEVERAGE,
-                increaseFeeBps: FEE_BPS,
-                minExecutionFee: MIN_EXEC_FEE
-            })
-        );
-
+        _deployAdapter(address(impl), WNT, MARKET);
         _fund(alice.account(), 5 ether);
         _fund(bob.account(), 5 ether);
     }
 
     // ─── helpers ──────────────────────────────────────────────────────────────
 
-    /// Funds the user's account at its predicted address, before the account exists.
-    function _fund(address user, uint256 amount) internal {
-        vm.deal(adapter.accountOf(user), amount);
-    }
-
     function _input(CofheClient client, Plain memory p)
         internal
-        returns (SealedOrderAdapter.SealedOrderInput memory input)
+        returns (SealedOrderAdapter.SealedOrderInput memory)
     {
-        address target = address(adapter);
-        input.market = MARKET;
-        input.kind = SealedOrderAdapter.OrderKind.LimitIncrease;
-        input.collateral = COLLATERAL;
-        input.executionFee = EXEC_FEE;
-        input.fallbackSlippageBps = 800;
-        (input.isLong, input.isLongProof) = client.createExternalEbool(p.isLong, target);
-        (input.sizeUsd6, input.sizeProof) = client.createExternalEuint64(p.size, target);
-        (input.triggerPrice8, input.triggerProof) = client.createExternalEuint64(p.trigger, target);
-        (input.slippageBps, input.slippageProof) = client.createExternalEuint32(p.slippage, target);
+        return _input(client, MARKET, COLLATERAL, EXEC_FEE, p);
     }
-
     function _valid() internal pure returns (Plain memory) {
         return Plain({isLong: true, size: 5_000e6, trigger: 2_400e8, slippage: 50});
     }

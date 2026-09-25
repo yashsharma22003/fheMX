@@ -35,6 +35,12 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-25 | — | Encrypted fixed-point formats: size in USD with 6 decimals (`euint64`, ×1e24 for GMX), trigger price in USD with 8 decimals (`euint64`), slippage in bps (`euint32`), side as `ebool`. | Keeps every value in 64 bits or less (cheaper FHE ops) with ranges far beyond the caps: up to $1.8e13 size and $1.8e11 price. | — |
 | 2026-09-25 | — | The adapter deploys its own `UserAccountFactory` in its constructor, and creates a user's account on their first order. Users fund the predicted account address beforehand. | Removes the adapter/factory circular dependency and a separate "create account" step. | — |
 
+| 2026-09-25 | — | Trigger check reveals `select(fired, value, 0)` for size, side and slippage only; the trigger price is never decrypted, and a zero size means "not fired". | Fewest decryptions per check; trigger stays hidden except for the fire-time bracket (design §5). | — |
+| 2026-09-25 | — | The latest check wins: a new check (after the minimum interval, with a newer report) replaces an unexecuted fired result. | If the price moved back, the order should not fill at a stale trigger; avoids a separate "resolve" transaction per check. | — |
+| 2026-09-25 | — | `execute` prices `acceptablePrice` and the protocol fee from the check's report price, not a fresh one. | The check price is the verified price the fire decision used; GMX's own oracle and slippage bound protect the execution. | — |
+| 2026-09-25 | — | Price reports go through an `IPriceVerifier` interface; a mock decodes `(price, timestamp)` until the Data Streams verifier in milestone 6. | Lets the end-to-end demo run without Data Streams credentials. | — |
+| 2026-09-25 | — | Demo scope: ETH-indexed markets with WNT collateral, one report prices both. | Leverage and fee conversion need the collateral price; a second report per check is deferred (known issue 10). | — |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

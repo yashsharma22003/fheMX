@@ -13,6 +13,8 @@ Deferred on purpose; fix as the relevant code is written. When a test harness ex
 
 | 8 | Milestones 2–4 | The clone has no owner cancel or manual close of GMX orders/positions, and supports native-ETH collateral only. Callback authentication is done (milestone 2). | Milestone 5: owner cancel and manual close, ERC20 collateral (USDC.SG) via token approval. | Owner cancels a pending GMX order after the request-expiration delay. |
 | 9 | Clone, fee model | The clone learns GMX outcomes only from callbacks. A lost callback leaves the order `Pending`: the lock can't be released and the protocol fee can't be collected, contradicting "settlement never depends on the callback". | Milestone 5: permissionless `reconcile(orderId)` that infers the outcome from GMX state (order gone + position changed, or order gone + collateral returned). | Callback forced to revert; reconcile recovers both outcomes and the fee is still collected. |
+| 10 | Adapter markets | The leverage check and fee conversion price collateral with the index-token report, so they are correct only for markets whose index token is the collateral (WNT): ETH/USD today. | Before adding BTC/USD or others: take a second verified report for the collateral token in `checkBatch`, or restrict each market's collateral. | BTC/USD order with WNT collateral checks leverage at the ETH price. |
+| 11 | Trigger checks | No per-check fee yet (design D3), so checks are free to call; griefing is bounded only by the minimum check interval. | Milestone 6, with the fee-model check-fee spread. | Check without fee reverts; fee refunded or rewarded on a fire. |
 
 ## Environment
 
