@@ -19,11 +19,14 @@ contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
 
     function setUp() public {
         UserAccount impl = new UserAccount(
-            address(new MockGmxExchangeRouter()),
-            address(0x0FA),
-            address(new MockGmxDataStore()),
-            address(new MockGmxRoleStore()),
-            WNT,
+            UserAccount.GmxContracts({
+                exchangeRouter: address(new MockGmxExchangeRouter()),
+                router: address(0x0B7),
+                orderVault: address(0x0FA),
+                dataStore: address(new MockGmxDataStore()),
+                roleStore: address(new MockGmxRoleStore()),
+                wnt: WNT
+            }),
             makeAddr("feeCollector")
         );
         _deployAdapter(address(impl), WNT, MARKET);

@@ -38,7 +38,15 @@ contract UserAccountTest is Test {
         roleStore.grant(gmxHandler, GmxRole.CONTROLLER);
         router = new MockGmxExchangeRouter();
         UserAccount impl = new UserAccount(
-            address(router), ORDER_VAULT, address(new MockGmxDataStore()), address(roleStore), WNT, feeCollector
+            UserAccount.GmxContracts({
+                exchangeRouter: address(router),
+                router: address(router),
+                orderVault: ORDER_VAULT,
+                dataStore: address(new MockGmxDataStore()),
+                roleStore: address(roleStore),
+                wnt: WNT
+            }),
+            feeCollector
         );
         factory = new UserAccountFactory(address(impl), adapter);
         account = UserAccount(payable(factory.createAccount(owner)));
@@ -100,11 +108,6 @@ contract UserAccountTest is Test {
         account.lock(ORDER, WNT, COLLATERAL, FEE, 2, 0);
     }
 
-    function test_lock_rejectsUnsupportedToken() public {
-        vm.prank(adapter);
-        vm.expectRevert(abi.encodeWithSelector(IUserAccount.UnsupportedToken.selector, address(0xBEEF)));
-        account.lock(ORDER, address(0xBEEF), COLLATERAL, FEE, 2, 0);
-    }
 
     function test_lock_rejectsMoreThanFreeBalance() public {
         vm.prank(adapter);
@@ -285,8 +288,8 @@ contract UserAccountTest is Test {
         uint256 free = account.freeBalance(WNT);
         vm.startPrank(owner);
         vm.expectRevert(abi.encodeWithSelector(IUserAccount.InsufficientFreeBalance.selector, free + 1, free));
-        account.withdraw(free + 1, owner);
-        account.withdraw(free, owner);
+        account.withdraw(WNT, free + 1, owner);
+        account.withdraw(WNT, free, owner);
         vm.stopPrank();
         assertEq(owner.balance, free);
         assertEq(account.freeBalance(WNT), 0);
@@ -295,6 +298,6 @@ contract UserAccountTest is Test {
     function test_withdraw_onlyOwner() public {
         vm.prank(adapter);
         vm.expectRevert(IUserAccount.NotOwner.selector);
-        account.withdraw(1, adapter);
+        account.withdraw(WNT, 1, adapter);
     }
 }

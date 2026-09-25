@@ -91,6 +91,15 @@ Markets: WETH/WETH-USDC.SG, BTC/BTC-USDC.SG, CRV/WETH-USDC.SG. No Sepolia token 
 - Cancelling after it calls `afterOrderCancellation` on the callback contract, from a CONTROLLER holder, and returns the collateral as native ETH to `cancellationReceiver` (with `shouldUnwrapNativeToken`).
 - A keeper execution calls `afterOrderExecution` from a CONTROLLER holder, opens the position under the account, clears oracle prices, and refunds unused execution fee through `refundExecutionFee` with ETH attached.
 
+## Verified on a fork (milestone 5)
+
+`contracts/test/fork/UserAccountGmx.t.sol`, 2026-09-25:
+
+- A callback given 1 gas fails inside GMX, which catches it and still executes or cancels the order: the account receives nothing, so settlement needs `reconcile`.
+- After execution or cancellation the order key is removed from DataStore `ORDER_LIST` (`containsBytes32`).
+- ERC20 collateral (USDC.SG) works with an approval to the **Router** (`0x72F1…`, not the ExchangeRouter) and `sendTokens(token, orderVault, amount)` in the multicall; `deal` works on USDC.SG in fork tests.
+- A `MarketDecrease` with `acceptablePrice = 0` (long) closes the full position; collateral returns as native ETH with `shouldUnwrapNativeToken`.
+
 ## Keeper simulator (tests only)
 
 Real execution needs signed Data Streams reports, which a fork test can't produce. `contracts/test/helpers/GmxKeeperSimulator.sol` instead:

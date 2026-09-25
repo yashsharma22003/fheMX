@@ -28,7 +28,15 @@ contract SealedOrderAdapterTriggerTest is SealedOrderAdapterTestBase {
         roleStore.grant(gmxHandler, GmxRole.CONTROLLER);
         router = new MockGmxExchangeRouter();
         UserAccount impl = new UserAccount(
-            address(router), address(0x0FA), address(new MockGmxDataStore()), address(roleStore), WNT, feeCollector
+            UserAccount.GmxContracts({
+                exchangeRouter: address(router),
+                router: address(0x0B7),
+                orderVault: address(0x0FA),
+                dataStore: address(new MockGmxDataStore()),
+                roleStore: address(roleStore),
+                wnt: WNT
+            }),
+            feeCollector
         );
         _deployAdapter(address(impl), WNT, MARKET);
         _fund(alice.account(), 5 ether);

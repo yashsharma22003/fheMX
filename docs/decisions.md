@@ -41,6 +41,10 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-25 | — | Price reports go through an `IPriceVerifier` interface; a mock decodes `(price, timestamp)` until the Data Streams verifier in milestone 6. | Lets the end-to-end demo run without Data Streams credentials. | — |
 | 2026-09-25 | — | Demo scope: ETH-indexed markets with WNT collateral, one report prices both. | Leverage and fee conversion need the collateral price; a second report per check is deferred (known issue 10). | — |
 
+| 2026-09-25 | — | `reconcile(orderId)` infers a lost callback's outcome: GMX order gone + position grew by ≥ the order size ⇒ executed; else, only if the collateral is actually back in the account ⇒ cancelled; otherwise refuse. | Settlement and fee collection must not depend on callbacks (design §3, fee spec §7). Refusing beats guessing: a wrong "cancelled" would credit collateral that isn't there. | — |
+| 2026-09-25 | — | Owner manual close is blocked while any adapter order is in flight, and adapter submits wait until a manual close has left GMX's order list. | Reconcile relies on the position only growing through adapter orders while they are pending. | — |
+| 2026-09-25 | — | Account balances are per token; execution fees are always ETH; collateral and protocol-fee reserve are in the collateral token; ERC20 collateral goes to GMX via Router approval + `sendTokens` in the same multicall. | GMX takes execution fees in native token only; fees charged in the collateral the user actually posted. | Milestone 2: ETH-only account. |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

@@ -1,6 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IGmxExchangeRouter} from "../../src/interfaces/gmx/IGmxExchangeRouter.sol";
+
+contract MockERC20 is ERC20 {
+    uint8 private immutable _decimals;
+
+    constructor(string memory symbol, uint8 decimals_) ERC20(symbol, symbol) {
+        _decimals = decimals_;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _decimals;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
 /// @notice Minimal GMX stand-ins for unit tests (no fork). Fork tests use the real contracts.
 contract MockGmxRoleStore {
     mapping(address => mapping(bytes32 => bool)) public hasRole;
@@ -13,16 +33,39 @@ contract MockGmxRoleStore {
 contract MockGmxExchangeRouter {
     uint256 public ordersCreated;
     uint256 public lastValue;
+    uint256 public lastTokenAmount;
+    bytes32 public lastCancelled;
 
-    /// @dev Accepts the [sendWnt, createOrder] multicall the account makes; returns a fresh order key.
+    /// @dev Accepts the [sendWnt, (sendTokens,) createOrder] multicall the account makes; pulls tokens the way
+    ///      GMX's Router does (the test deploys the account with this contract as `router`); returns a fresh key.
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results) {
         results = new bytes[](data.length);
         lastValue = msg.value;
+        for (uint256 i; i < data.length; i++) {
+            if (bytes4(data[i][:4]) == IGmxExchangeRouter.sendTokens.selector) {
+                (address token,, uint256 amount) = abi.decode(data[i][4:], (address, address, uint256));
+                IERC20(token).transferFrom(msg.sender, address(this), amount);
+                lastTokenAmount = amount;
+            }
+        }
         ordersCreated++;
         results[data.length - 1] = abi.encode(keccak256(abi.encode("gmx-order", ordersCreated)));
+    }
+
+    function cancelOrder(bytes32 key) external payable {
+        lastCancelled = key;
     }
 }
 
 contract MockGmxDataStore {
     mapping(bytes32 => uint256) public getUint;
+    mapping(bytes32 => mapping(bytes32 => bool)) public containsBytes32;
+
+    function setUint(bytes32 key, uint256 value) external {
+        getUint[key] = value;
+    }
+
+    function setContains(bytes32 setKey, bytes32 value, bool contained) external {
+        containsBytes32[setKey][value] = contained;
+    }
 }

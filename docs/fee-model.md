@@ -112,7 +112,7 @@ The adapter records the fee owed at execute and collects it with `payProtocolFee
 
 ### 4. "Never depends on the callback" needs reconciliation
 
-Today the clone learns the outcome only from GMX's callback. If a callback is lost, the order stays `Pending`: no fee can be collected and the lock can't be released. Tracked as [known issue 9](KNOWN_ISSUES.md); the fix is a permissionless reconcile that reads GMX state (order gone + position size changed ⇒ executed; order gone + collateral returned ⇒ cancelled). The §7 test "fee collection completes if the callback reverts" depends on it.
+Today the clone learns the outcome only from GMX's callback. If a callback is lost, the order stays `Pending`: no fee can be collected and the lock can't be released. Resolved in milestone 5 ([known issue 9](KNOWN_ISSUES.md)): a permissionless reconcile that reads GMX state (order gone + position size changed ⇒ executed; order gone + collateral returned ⇒ cancelled). The §7 test "fee collection completes if the callback reverts" depends on it.
 
 ### Where each part is built
 
@@ -120,7 +120,7 @@ Today the clone learns the outcome only from GMX's callback. If a callback is lo
 | --- | --- | --- |
 | Fee reserve at lock, pay only after `Executed`, at most once, receive-only immutable collector, none on cancel | 2 | **Done** (`UserAccount`, tests in `UserAccount.t.sol` and `UserAccountGmx.t.sol`) |
 | Reserve sizing from max order, `INCREASE_FEE_BPS` as an immutable placeholder (10 bps), fee computed at execute, collected after fill | 4 | Planned |
-| Reconcile path for lost callbacks (known issue 9) | 5 | Planned |
+| Reconcile path for lost callbacks (known issue 9) | 5 | **Done**: fee collected after a real lost callback on a fork |
 | Check-fee spread routed to the collector | 6 (with the D3 per-check fee) | Planned |
 | `DECREASE_FEE_BPS` (default 0), re-armed fill charged once | 7 | Planned |
 | Real fee values | After 8 (live measurements) | Blocked on §8 open items |

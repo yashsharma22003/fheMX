@@ -28,7 +28,7 @@ contract SealedLimitEntryDemoForkTest is SealedOrderAdapterTestBase {
         ethUsd = NetworkConfig.market(json, "ETH_USD");
 
         UserAccount impl =
-            new UserAccount(gmx.exchangeRouter, gmx.orderVault, gmx.dataStore, gmx.roleStore, gmx.wnt, feeCollector);
+            new UserAccount(_gmxContracts(), feeCollector);
         _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken);
         _fund(alice.account(), 0.1 ether);
     }
@@ -113,5 +113,16 @@ contract SealedLimitEntryDemoForkTest is SealedOrderAdapterTestBase {
         assertEq(feeCollector.balance, 0, "no fee on a failed fill");
         assertEq(address(account).balance, IUserAccount(account).freeBalance(gmx.wnt), "all funds withdrawable");
         assertGe(address(account).balance, 0.1 ether - EXEC_FEE, "at most the first execution fee was spent");
+    }
+
+    function _gmxContracts() internal view returns (UserAccount.GmxContracts memory) {
+        return UserAccount.GmxContracts({
+            exchangeRouter: gmx.exchangeRouter,
+            router: gmx.router,
+            orderVault: gmx.orderVault,
+            dataStore: gmx.dataStore,
+            roleStore: gmx.roleStore,
+            wnt: gmx.wnt
+        });
     }
 }

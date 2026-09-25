@@ -19,8 +19,8 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources. Four small gaps deferred (known issues 1–4).
-- **Build:** milestones 1–4 done. End-to-end demo works on an Arbitrum Sepolia fork: sealed limit entry → encrypted trigger check → reveal → real GMX order → fill → fee.
-- **Next:** milestone 5 (complete the clone: owner cancel and close, ERC20 collateral, reconcile for lost callbacks), per [build-plan.md](build-plan.md).
+- **Build:** milestones 1–5 done. End-to-end demo works on an Arbitrum Sepolia fork (sealed limit entry → encrypted trigger check → reveal → real GMX order → fill → fee); user accounts support USDC collateral, owner cancel and close, and recover from lost GMX callbacks.
+- **Next:** milestone 6 (Chainlink Data Streams verification), which needs Data Streams credentials; milestone 7 (stop-loss, take-profit, re-arm) can go first if credentials aren't ready. See [build-plan.md](build-plan.md).
 
 ## Key facts
 
