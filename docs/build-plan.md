@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–7 done (6 revised to Chainlink Data Feeds); milestone 8 (live Sepolia) remains.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–7 done (6 revised to Chainlink Data Feeds); milestone 8 built and rehearsed on a local fork, live deployment waiting on a funded wallet.
 
 ## Done: setup
 
@@ -57,6 +57,16 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Tests: 8 unit tests; fork demo (`SealedLimitEntryFeedDemo.t.sol`) against the live Sepolia ETH/USD feed.
 - The per-check fee (known issue 11) moves to after milestone 8, once live costs are measured.
 
+## Milestone 8 so far: deploy, checker, client
+
+- `contracts/script/Deploy.s.sol`: deploys account implementation, feed verifier and adapter from `config/networks/arbitrum-sepolia.json` (new `adapter` section), writes `deployments/`.
+- `shared/` (new TypeScript package): config and deployment loading, viem and CoFHE clients, fixed-point helpers, ABIs generated from Foundry output.
+- `checker/`: loop that checks open orders on feed updates, decrypts through CoFHE (`decryptForTx().withoutACP()`), executes, settles, re-arms and reconciles, logging latency and gas to `checker/metrics.jsonl`.
+- `client/`: CLI for account, fund, order (local encryption with `@cofhe/sdk`), status, cancel, withdraw.
+- Adapter intake now takes **one proof for all four encrypted fields** (what `encryptInputs` returns), verified with `Impl.verifyBatchInputs`; tests use a `BatchCofheClient` helper.
+- **Rehearsed on a local anvil fork of Sepolia:** deploy succeeded; the client encrypted an order with the real CoFHE SDK and Fhenix's live verifier, and the adapter accepted the proof against the real TaskManager. `submitOrder` used 1,155,323 gas; one-order `checkBatch` 742,959 gas. Decryption can't run on a local fork (`not_publicly_allowed`: Fhenix's service checks the live chain) and waits for the live deployment.
+- Remaining: deploy live, run a full cycle, collect latency and cost numbers (design §10), then size the per-check fee (known issue 11).
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -76,7 +86,8 @@ First demo scope: limit entries only; stop-loss and take-profit arrive in milest
 
 ## Open questions
 
-1. **RPC for live Sepolia.** The public endpoint is rate-limited; a free-tier provider key (Alchemy, Infura) is enough for milestone 8.
+1. **Funded wallet.** Milestone 8's live run needs a key with Arbitrum Sepolia ETH in `.env` (about 0.05 ETH).
+2. **RPC for live Sepolia.** The public endpoint is rate-limited; a free-tier provider key (Alchemy, Infura) is better for the checker.
 
 ## Working rules
 

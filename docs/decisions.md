@@ -53,6 +53,9 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 
 | 2026-09-30 | D7 | Trigger checks are priced by Chainlink **Data Feeds** (free, push, on-chain) through `ChainlinkFeedPriceVerifier`, not Data Streams. | Data Streams has no free tier ($150/month per feed minimum), which the project can't afford. Feeds are free, are the reference feeds GMX lists, and remove the caller's choice of report. Cost: slower updates (30–120 s on Sepolia), so triggers can fire later or miss a brief spike. | Design §3 and D3: Data Streams reports supplied by the checker. |
 
+| 2026-09-30 | — | Intake takes one CoFHE proof for all four encrypted fields, verified with `Impl.verifyBatchInputs` (mixed types: bool, uint64, uint64, uint32). | `@cofhe/sdk` `encryptInputs` returns one batch proof; one ZK proof per order instead of four for users, and one verification on-chain. Replay protection is unchanged (proof bound to sender and adapter). | Milestone 3: one proof per field. |
+| 2026-09-30 | — | TypeScript split into `shared/` (config, clients, ABIs generated from Foundry output), `checker/` and `client/`. | One layer per folder; ABIs can't drift from the contracts. | — |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

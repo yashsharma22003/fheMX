@@ -2,6 +2,7 @@
 pragma solidity ^0.8.25;
 
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
+import {UnsignedEncryptedInput} from "@fhenixprotocol/cofhe-contracts/ICofhe.sol";
 import {IUserAccount} from "../account/IUserAccount.sol";
 import {UserAccountFactory} from "../account/UserAccountFactory.sol";
 import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
@@ -61,6 +62,8 @@ contract SealedOrderAdapter {
 
     /// @dev `collateral` is posted collateral for a limit entry and must be 0 for stop-loss/take-profit.
     ///      `collateralToken` is WNT for a limit entry, or the collateral token of the position being reduced.
+    ///      The four encrypted fields are one CoFHE batch, in this order (bool, uint64, uint64, uint32), with one
+    ///      `inputProof`: what `@cofhe/sdk` `encryptInputs([...]).setConsumingContract(adapter)` returns.
     struct SealedOrderInput {
         address market;
         OrderKind kind;
@@ -69,13 +72,10 @@ contract SealedOrderAdapter {
         uint256 executionFee;
         uint32 fallbackSlippageBps;
         externalEbool isLong;
-        bytes isLongProof;
         externalEuint64 sizeUsd6;
-        bytes sizeProof;
         externalEuint64 triggerPrice8;
-        bytes triggerProof;
         externalEuint32 slippageBps;
-        bytes slippageProof;
+        bytes inputProof;
     }
 
     struct SealedOrder {
@@ -252,11 +252,7 @@ contract SealedOrderAdapter {
         o.collateral = input.collateral;
         o.fallbackSlippageBps = input.fallbackSlippageBps;
 
-        // Proofs are bound to msg.sender and this contract, so another user's inputs can't be replayed here.
-        o.isLong = FHE.asEbool(input.isLong, input.isLongProof);
-        o.sizeUsd6 = FHE.asEuint64(input.sizeUsd6, input.sizeProof);
-        o.triggerPrice8 = FHE.asEuint64(input.triggerPrice8, input.triggerProof);
-        o.slippageBps = FHE.asEuint32(input.slippageBps, input.slippageProof);
+        _verifyInputs(o, input);
         o.intakeValid = _intakeCaps(o.sizeUsd6, o.triggerPrice8, o.slippageBps);
 
         _grant(o.isLong, msg.sender);
@@ -274,6 +270,21 @@ contract SealedOrderAdapter {
         emit OrderSealed(
             orderId, msg.sender, account, input.market, input.kind, input.collateral, input.executionFee, protocolFeeReserve
         );
+    }
+
+    /// @dev One proof covers all four inputs. It is bound to msg.sender and this contract, so another user's
+    ///      inputs, or inputs made for another contract, can't be replayed here.
+    function _verifyInputs(SealedOrder storage o, SealedOrderInput calldata input) private {
+        UnsignedEncryptedInput[] memory inputs = new UnsignedEncryptedInput[](4);
+        inputs[0] = UnsignedEncryptedInput(uint256(externalEbool.unwrap(input.isLong)), 0, Utils.EBOOL_TFHE);
+        inputs[1] = UnsignedEncryptedInput(uint256(externalEuint64.unwrap(input.sizeUsd6)), 0, Utils.EUINT64_TFHE);
+        inputs[2] = UnsignedEncryptedInput(uint256(externalEuint64.unwrap(input.triggerPrice8)), 0, Utils.EUINT64_TFHE);
+        inputs[3] = UnsignedEncryptedInput(uint256(externalEuint32.unwrap(input.slippageBps)), 0, Utils.EUINT32_TFHE);
+        bytes32[] memory handles = Impl.verifyBatchInputs(inputs, input.inputProof);
+        o.isLong = ebool.wrap(handles[0]);
+        o.sizeUsd6 = euint64.wrap(handles[1]);
+        o.triggerPrice8 = euint64.wrap(handles[2]);
+        o.slippageBps = euint32.wrap(handles[3]);
     }
 
     /// @notice Cancel a sealed order before it fires, or close one whose GMX order was cancelled.

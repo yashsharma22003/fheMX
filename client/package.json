@@ -3,14 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cli": "tsx src/cli.ts"
   },
   "dependencies": {
     "@cofhe/sdk": "0.7.1",
-    "viem": "2.38.6"
+    "viem": "2.38.6",
+    "@sealed/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "tsx": "4.23.15"
   }
 }

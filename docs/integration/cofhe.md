@@ -44,6 +44,28 @@ Verified by `contracts/test/unit/CofheToolchain.t.sol`.
 
 `FHE.decrypt` no longer exists; the TaskManager rejects it (`DecryptFunctionNotSupported`).
 
+## Client side (`@cofhe/sdk` 0.7.1, Node)
+
+```ts
+import { createCofheClient, createCofheConfig } from "@cofhe/sdk/node";
+import { arbSepolia } from "@cofhe/sdk/chains";
+import { Encryptable } from "@cofhe/sdk";
+
+const client = createCofheClient(createCofheConfig({ supportedChains: [arbSepolia] }));
+await client.connect(publicClient, walletClient);           // viem clients
+
+// One batch, one proof, bound to the connected account and the consuming contract.
+const [isLong, size, trigger, slippage, proof] = await client
+  .encryptInputs([Encryptable.bool(true), Encryptable.uint64(size6), Encryptable.uint64(price8), Encryptable.uint32(bps)])
+  .setConsumingContract(adapter)
+  .execute();
+
+// Decrypt a publicly allowed handle, with the signature `publishDecryptResult` needs.
+const { decryptedValue, signature } = await client.decryptForTx(handle).withoutACP().execute();
+```
+
+Verified 2026-09-30 on a local anvil fork of Arbitrum Sepolia: the SDK's batch proof, signed by Fhenix's live verifier, passes `Impl.verifyBatchInputs` against the real TaskManager (the fork keeps chain id 421614). `decryptForTx` on a fork-only handle fails with `not_publicly_allowed`, because the decryption service checks the live chain's ACL.
+
 ## Decrypt flow
 
 1. Contract computes the value and calls `FHE.allowPublic` on it.

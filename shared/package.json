@@ -1,19 +1,19 @@
 {
-  "name": "checker",
+  "name": "@sealed/shared",
   "private": true,
   "type": "module",
+  "main": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "start": "tsx src/index.ts"
+    "abis": "node scripts/gen-abis.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@cofhe/sdk": "0.7.1",
-    "viem": "2.38.6",
-    "@sealed/shared": "workspace:*"
+    "viem": "2.38.6"
   },
   "devDependencies": {
     "@types/node": "24",
-    "tsx": "4.23.15",
     "typescript": "5.9.3"
   }
 }

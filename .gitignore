@@ -7,3 +7,6 @@ contracts/broadcast/*/31337/
 # TypeScript
 dist/
 *.tsbuildinfo
+# Deploy dry runs
+deployments/*.dry-run.json
+checker/metrics.jsonl

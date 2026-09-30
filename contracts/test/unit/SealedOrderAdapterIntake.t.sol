@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.25;
 
-import {CofheClient} from "@cofhe/foundry-plugin/CofheClient.sol";
+import {BatchCofheClient} from "../helpers/BatchCofheClient.sol";
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {SealedOrderAdapter} from "../../src/adapter/SealedOrderAdapter.sol";
 import {IUserAccount} from "../../src/account/IUserAccount.sol";
@@ -37,7 +37,7 @@ contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
 
     // ─── helpers ──────────────────────────────────────────────────────────────
 
-    function _input(CofheClient client, Plain memory p)
+    function _input(BatchCofheClient client, Plain memory p)
         internal
         returns (SealedOrderAdapter.SealedOrderInput memory)
     {
@@ -47,7 +47,7 @@ contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
         return Plain({isLong: true, size: 5_000e6, trigger: 2_400e8, slippage: 50});
     }
 
-    function _submit(CofheClient client, Plain memory p) internal returns (bytes32 orderId) {
+    function _submit(BatchCofheClient client, Plain memory p) internal returns (bytes32 orderId) {
         SealedOrderAdapter.SealedOrderInput memory input = _input(client, p);
         vm.prank(client.account());
         orderId = adapter.submitOrder(input);
@@ -124,7 +124,8 @@ contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
 
     function test_replay_inputsBoundToAnotherContractAreRejected() public {
         SealedOrderAdapter.SealedOrderInput memory input = _input(alice, _valid());
-        (input.sizeUsd6, input.sizeProof) = alice.createExternalEuint64(5_000e6, address(0xBEEF));
+        (input.isLong, input.sizeUsd6, input.triggerPrice8, input.slippageBps, input.inputProof) =
+            alice.encryptOrder(true, 5_000e6, 2_400e8, 50, address(0xBEEF));
 
         vm.prank(alice.account());
         vm.expectPartialRevert(bytes4(keccak256("InvalidSigner(address,address)")));

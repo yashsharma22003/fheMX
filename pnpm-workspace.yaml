@@ -1,4 +1,5 @@
 packages:
   - contracts
+  - shared
   - checker
   - client

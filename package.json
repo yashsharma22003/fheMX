@@ -1,12 +1,13 @@
 {
   "name": "sealed-order-gmx",
   "private": true,
-  "packageManager": "pnpm@10",
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
     "build": "pnpm -F contracts build",
     "test": "pnpm -F contracts test",
     "test:fork": "pnpm -F contracts test:fork",
-    "typecheck": "pnpm -F checker -F client typecheck"
+    "typecheck": "pnpm -F shared -F checker -F client typecheck",
+    "abis": "pnpm -F contracts build && pnpm -F shared abis"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -6,6 +6,7 @@ import {CofheClient} from "@cofhe/foundry-plugin/CofheClient.sol";
 import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {SealedOrderAdapter} from "../../src/adapter/SealedOrderAdapter.sol";
 import {MockPriceVerifier} from "./MockPriceVerifier.sol";
+import {BatchCofheClient} from "./BatchCofheClient.sol";
 
 /// @notice Shared deployment and input helpers for adapter tests (unit and fork).
 abstract contract SealedOrderAdapterTestBase is CofheTest {
@@ -27,8 +28,8 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
     SealedOrderAdapter internal adapter;
     address internal wntToken;
     MockPriceVerifier internal prices;
-    CofheClient internal alice;
-    CofheClient internal bob;
+    BatchCofheClient internal alice;
+    BatchCofheClient internal bob;
 
     struct Plain {
         bool isLong;
@@ -62,9 +63,9 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         // The mock signers sign with cheatcodes; on a fork their addresses pre-exist, so allow them explicitly.
         vm.allowCheatcodes(address(0x6E12D8C87503D4287c294f2Fdef96ACd9DFf6bd2));
         vm.allowCheatcodes(address(0x70997970C51812dc3A010C7d01b50e0d17dc79C8));
-        alice = createCofheClient();
+        alice = new BatchCofheClient();
         alice.connect(ALICE_PKEY);
-        bob = createCofheClient();
+        bob = new BatchCofheClient();
         bob.connect(BOB_PKEY);
         prices = new MockPriceVerifier();
         if (priceVerifier == address(0)) priceVerifier = address(prices);
@@ -118,7 +119,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         vm.deal(adapter.accountOf(user), amount);
     }
 
-    function _input(CofheClient client, address market, uint256 collateral, uint256 executionFee, Plain memory p)
+    function _input(BatchCofheClient client, address market, uint256 collateral, uint256 executionFee, Plain memory p)
         internal
         returns (SealedOrderAdapter.SealedOrderInput memory input)
     {
@@ -129,15 +130,13 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         input.collateral = collateral;
         input.executionFee = executionFee;
         input.fallbackSlippageBps = 800;
-        (input.isLong, input.isLongProof) = client.createExternalEbool(p.isLong, target);
-        (input.sizeUsd6, input.sizeProof) = client.createExternalEuint64(p.size, target);
-        (input.triggerPrice8, input.triggerProof) = client.createExternalEuint64(p.trigger, target);
-        (input.slippageBps, input.slippageProof) = client.createExternalEuint32(p.slippage, target);
+        (input.isLong, input.sizeUsd6, input.triggerPrice8, input.slippageBps, input.inputProof) =
+            client.encryptOrder(p.isLong, p.size, p.trigger, p.slippage, target);
     }
 
     /// Stop-loss or take-profit on the account's existing position (no collateral).
     function _decreaseInput(
-        CofheClient client,
+        BatchCofheClient client,
         address market,
         SealedOrderAdapter.OrderKind kind,
         address positionCollateral,
@@ -149,7 +148,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         input.collateralToken = positionCollateral;
     }
 
-    function _submitAs(CofheClient client, SealedOrderAdapter.SealedOrderInput memory input)
+    function _submitAs(BatchCofheClient client, SealedOrderAdapter.SealedOrderInput memory input)
         internal
         returns (bytes32 orderId)
     {
