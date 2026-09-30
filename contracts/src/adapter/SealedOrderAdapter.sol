@@ -184,7 +184,7 @@ contract SealedOrderAdapter {
 
     /// @notice Submit a sealed order. Encrypted inputs must be created for this contract by msg.sender.
     ///         Collateral and fees must already sit in msg.sender's account (its address is
-    ///         `factory.accountOf(msg.sender)`, fundable before it exists); the account is created on first use.
+    ///         `factory.accountOf(msg.sender)`, fundable before it exists); the account is created on first use.   
     function submitOrder(SealedOrderInput calldata input) external returns (bytes32 orderId) {
         if (!isSupportedMarket[input.market]) revert UnsupportedMarket(input.market);
         if (input.collateral == 0) revert ZeroCollateral();
@@ -197,7 +197,7 @@ contract SealedOrderAdapter {
         if (account.code.length == 0) factory.createAccount(msg.sender);
 
         orderId = bytes32(++orderCount);
-        SealedOrder storage o = _orders[orderId];
+        SealedOrder storage o = _orders[orderId];  
         o.owner = msg.sender;
         o.account = account;
         o.market = input.market;
