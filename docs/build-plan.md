@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–5 and 7 done; milestone 6 (Data Streams) and 8 (live Sepolia) remain.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–7 done (6 revised to Chainlink Data Feeds); milestone 8 (live Sepolia) remains.
 
 ## Done: setup
 
@@ -47,6 +47,16 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Tests: 19 adapter unit tests (`SealedOrderAdapterDecrease.t.sol`), 4 more account tests; fork demo (`test/fork/SealedStopLossDemo.t.sol`): a sealed stop-loss closes a real position opened by a sealed limit entry, and a stop GMX rejects on slippage fills on the re-arm.
 - Closes known issues 1–4. Found and recorded 14 (GMX pending price impact makes tight stop-loss bounds fail) and 15 (testnet drift; fixed in tests with fixtures).
 
+## Done: known issue 14, GMX execution-price anchoring
+
+- `acceptablePrice` is the user's slippage around GMX's own execution-price estimate (`Reader.getExecutionPrice`) at the check price, for increases, decreases and re-arms. The fork stop-loss demo now runs with real price impact.
+
+## Done: milestone 6 (revised), Chainlink Data Feeds
+
+- Data Streams replaced by free Chainlink Data Feeds (D7): `ChainlinkFeedPriceVerifier` behind the unchanged `IPriceVerifier`; decimals normalised to 8; optional L2 sequencer-uptime check. The adapter's age and newer-report rules apply to the feed's `updatedAt`.
+- Tests: 8 unit tests; fork demo (`SealedLimitEntryFeedDemo.t.sol`) against the live Sepolia ETH/USD feed.
+- The per-check fee (known issue 11) moves to after milestone 8, once live costs are measured.
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -58,15 +68,15 @@ Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes b
 | 3 | Sealed intake ✅ | Adapter accepts encrypted side, size, trigger and slippage, stores handles with the right grants, runs price-independent cap checks on ciphertext. Includes the replay tests. | `contracts/src/adapter` |
 | 4 | Trigger check → execute, one order (**demo**) ✅ | `checkBatch` with one order and a mocked price report, zero-unless-fired decrypt, publish, `execute` into the clone. A full limit entry works end to end on the fork. Leverage cap evaluated in the check against the report price. Protocol fee (D6) computed at execute and collected after the fill. | `contracts/src/adapter`, `src/oracle` |
 | 5 | Complete the clone ✅ | Owner cancel and manual close, ERC20 collateral, reconcile for lost callbacks. Adapter unchanged. Closes known issues 8 and 9. | `contracts/src/account` |
-| 6 | Data Streams verification | Real report decoding and verification; report-age and increasing-timestamp rules; D3 per-check fee with its spread to the fee collector. Needs credentials. | `contracts/src/oracle` |
+| 6 | Price source ✅ (revised) | Chainlink Data Feeds verifier instead of Data Streams (D7); report-age and newer-update rules on the feed's update time. Per-check fee deferred until live costs are known. | `contracts/src/oracle` |
 | 7 | Decrease orders and re-arm ✅ | Stop-loss and take-profit, live-position size trim, `rearm()`, decrease fee (default 0). Fixes known issues 1–4. | `contracts/src/adapter`, `src/account` |
-| 8 | Checker and client, live Sepolia | Real encryption with `@cofhe/sdk`, a checker loop, contracts deployed to Sepolia. Produces the latency and cost numbers in design §10. | `checker/`, `client/`, `contracts/script` |
+| 8 | Checker and client, live Sepolia | Contracts deployed to Sepolia with the feed verifier; real encryption with `@cofhe/sdk`; a checker loop that calls `checkBatch` on each feed update, decrypts and executes. Produces the latency and cost numbers in design §10. No paid services needed. | `checker/`, `client/`, `contracts/script` |
 
 First demo scope: limit entries only; stop-loss and take-profit arrive in milestone 7.
 
 ## Open questions
 
-1. **Data Streams access.** Do we have Chainlink Data Streams credentials for Arbitrum Sepolia, or do we request them? Decides when milestone 6 can start.
+1. **RPC for live Sepolia.** The public endpoint is rate-limited; a free-tier provider key (Alchemy, Infura) is enough for milestone 8.
 
 ## Working rules
 

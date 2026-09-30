@@ -42,6 +42,10 @@ library NetworkConfig {
         g.wnt = vm.parseJsonAddress(json, ".gmx.wnt");
     }
 
+    function chainlinkFeed(string memory json, string memory name) internal pure returns (address) {
+        return vm.parseJsonAddress(json, string.concat(".chainlinkFeeds.", name));
+    }
+
     function market(string memory json, string memory name) internal pure returns (Market memory m) {
         string memory base = string.concat(".markets.", name);
         m.marketToken = vm.parseJsonAddress(json, string.concat(base, ".marketToken"));

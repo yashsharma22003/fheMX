@@ -1,5 +1,7 @@
 # Chainlink Data Streams reference
 
+> **Not used since 2026-09-30.** Trigger checks are priced by free Chainlink Data Feeds instead ([chainlink-data-feeds.md](chainlink-data-feeds.md)). Kept as reference in case faster triggers are ever needed: Data Streams would plug in as another `IPriceVerifier`.
+
 The price source for trigger checks. Last checked 2026-09-30. Official docs: [docs.chain.link/data-streams](https://docs.chain.link/data-streams/overview).
 
 ## Why Data Streams

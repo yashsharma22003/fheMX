@@ -51,6 +51,8 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-30 | — | `acceptablePrice` is the user's slippage applied around GMX's own execution-price estimate at the check price (`Reader.getExecutionPrice`), not around the oracle price. | GMX validates against an execution price that includes price impact; on an imbalanced market oracle-based bounds fail even when nothing moved. The user's slippage then bounds price movement, which is what it's for. | Milestone 4: slippage around the check price. |
 | 2026-09-30 | — | Fork-test fixture raises GMX reserve factors on the test market. | Shared testnet pools drift (reserve cap hit); tests should check our logic, and the public RPC can't pin an older block. | Fork tests against raw latest state. |
 
+| 2026-09-30 | D7 | Trigger checks are priced by Chainlink **Data Feeds** (free, push, on-chain) through `ChainlinkFeedPriceVerifier`, not Data Streams. | Data Streams has no free tier ($150/month per feed minimum), which the project can't afford. Feeds are free, are the reference feeds GMX lists, and remove the caller's choice of report. Cost: slower updates (30–120 s on Sepolia), so triggers can fire later or miss a brief spike. | Design §3 and D3: Data Streams reports supplied by the checker. |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

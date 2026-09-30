@@ -44,6 +44,19 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         address gmxReader,
         address gmxDataStore
     ) internal {
+        _deployAdapterWithVerifier(accountImplementation, wnt, market, gmxReader, gmxDataStore, address(0), MAX_REPORT_AGE);
+    }
+
+    /// @param priceVerifier address(0) deploys the mock verifier
+    function _deployAdapterWithVerifier(
+        address accountImplementation,
+        address wnt,
+        address market,
+        address gmxReader,
+        address gmxDataStore,
+        address priceVerifier,
+        uint32 maxReportAge
+    ) internal {
         _clearLiveCofheStorage();
         deployMocks();
         // The mock signers sign with cheatcodes; on a fork their addresses pre-exist, so allow them explicitly.
@@ -54,6 +67,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         bob = createCofheClient();
         bob.connect(BOB_PKEY);
         prices = new MockPriceVerifier();
+        if (priceVerifier == address(0)) priceVerifier = address(prices);
         wntToken = wnt;
 
         address[] memory markets = new address[](1);
@@ -71,8 +85,8 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
                 increaseFeeBps: FEE_BPS,
                 decreaseFeeFlat: DECREASE_FEE_FLAT,
                 minExecutionFee: MIN_EXEC_FEE,
-                priceVerifier: address(prices),
-                maxReportAge: MAX_REPORT_AGE,
+                priceVerifier: priceVerifier,
+                maxReportAge: maxReportAge,
                 minCheckInterval: MIN_CHECK_INTERVAL,
                 callbackGasLimit: CALLBACK_GAS_LIMIT,
                 gmxReader: gmxReader,

@@ -60,5 +60,11 @@
       "longToken": "0xF79cE1Cf38A09D572b021B4C5548b75A14082F12",
       "shortToken": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773"
     }
+  },
+  "chainlinkFeeds": {
+    "comment": "Chainlink Data Feeds (free, push). 8 decimals. Sepolia ETH/USD updated every 30-120 s on 2026-09-30. No sequencer-uptime feed configured on testnet.",
+    "ETH_USD": "0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165",
+    "BTC_USD": "0x56a43EB56Da12C0dc1D972ACb089c06a5dEF8e69",
+    "USDC_USD": "0x0153002d20B96532C639313c2d54c3dA09109309"
   }
 }

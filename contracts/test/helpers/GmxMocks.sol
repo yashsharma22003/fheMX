@@ -94,3 +94,29 @@ contract MockGmxDataStore {
         containsBytes32[setKey][value] = contained;
     }
 }
+
+/// @notice Settable Chainlink AggregatorV3 for unit tests.
+contract MockAggregator {
+    uint8 public decimals;
+    int256 private _answer;
+    uint256 private _startedAt;
+    uint256 private _updatedAt;
+
+    constructor(uint8 decimals_) {
+        decimals = decimals_;
+    }
+
+    function set(int256 answer, uint256 updatedAt) external {
+        _answer = answer;
+        _startedAt = updatedAt;
+        _updatedAt = updatedAt;
+    }
+
+    function description() external pure returns (string memory) {
+        return "MOCK / USD";
+    }
+
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80) {
+        return (1, _answer, _startedAt, _updatedAt, 1);
+    }
+}
