@@ -28,6 +28,10 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
 
     SealedOrderAdapter internal adapter;
     address internal wntToken;
+    /// @dev per-check fee settings for the next deployment and the budget `_input` attaches; off by default
+    uint256 internal checkFee;
+    uint256 internal checkFeeSpread;
+    uint256 internal checkBudget;
     /// @dev short token of the default test market; a 6-decimal mock in unit tests, USDC.SG on forks
     address internal shortToken;
     MockPriceVerifier internal prices;
@@ -108,7 +112,9 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
                 minCheckInterval: MIN_CHECK_INTERVAL,
                 callbackGasLimit: CALLBACK_GAS_LIMIT,
                 gmxReader: gmxReader,
-                gmxDataStore: gmxDataStore
+                gmxDataStore: gmxDataStore,
+                checkFee: checkFee,
+                checkFeeSpread: checkFeeSpread
             })
         );
     }
@@ -147,6 +153,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         input.collateral = collateral;
         input.executionFee = executionFee;
         input.fallbackSlippageBps = 800;
+        input.checkBudget = checkBudget;
         (input.isLong, input.sizeUsd6, input.triggerPrice8, input.slippageBps, input.inputProof) =
             client.encryptOrder(p.isLong, p.size, p.trigger, p.slippage, target);
     }

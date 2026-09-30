@@ -93,12 +93,19 @@ async function feedUpdatedAt(market: Address): Promise<bigint> {
 
 async function checkOpenOrders(open: Hex[], now: bigint) {
   const minInterval = BigInt(await c.publicClient.readContract({ ...adapter, functionName: "minCheckInterval" }));
+  const checkFee = await c.publicClient.readContract({ ...adapter, functionName: "checkFee" });
   const byMarket = new Map<Address, Hex[]>();
   for (const id of open) {
     const { market } = known.get(id)!;
     const updatedAt = await feedUpdatedAt(market);
     const check = await c.publicClient.readContract({ ...adapter, functionName: "checkOf", args: [id] });
     const due = check.lastCheckAt === 0n || now >= check.lastCheckAt + minInterval;
+    // An order without budget for one more check would revert the whole batch: leave it until topped up.
+    const lock = await c.publicClient.readContract({ address: known.get(id)!.account, abi: userAccountAbi, functionName: "lockOf", args: [id] });
+    if (lock.checkBudget < checkFee) {
+      metric("skipBudget", { orderId: id, budget: lock.checkBudget, checkFee });
+      continue;
+    }
     if (check.lastReportTimestamp < updatedAt && due) byMarket.set(market, [...(byMarket.get(market) ?? []), id]);
   }
   for (const [market, ids] of byMarket) {

@@ -56,8 +56,11 @@ pnpm -F client cli order --kind limit --side long --size 100 --trigger 2400 --sl
 # other markets / collateral, e.g. BTC with USDC.SG:
 pnpm -F client cli fund-token USDC_SG 50
 pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
-pnpm -F client cli status 1
+pnpm -F client cli status 1              # includes checks left in the order's budget
+pnpm -F client cli topup 1 0.001         # add to order 1's check budget
 ```
+
+Each check of an order costs a fixed fee (`checkFeeWei` in the network config, 0.00005 ETH on Sepolia) from that order's check budget (`--check-budget`, default 0.001 ETH = 20 checks); it reimburses whoever runs the checker, with a 10% spread to the fee collector.
 
 A local rehearsal against `anvil --fork-url …` works for deploy, `fund` and `order` (real CoFHE encryption), but not for decryption, which only Fhenix's live service can do for live-chain ciphertexts. Delete `contracts/broadcast/Deploy.s.sol/421614` afterwards: the fork shares the chain id, and the checker reads its start block from there.
 

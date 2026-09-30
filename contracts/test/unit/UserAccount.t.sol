@@ -55,7 +55,7 @@ contract UserAccountTest is Test {
 
     function _lock() internal {
         vm.prank(adapter);
-        account.lock(ORDER, WNT, COLLATERAL, FEE, 2, PROTOCOL_FEE_RESERVE);
+        account.lock(ORDER, WNT, COLLATERAL, FEE, 2, PROTOCOL_FEE_RESERVE, 0);
     }
 
     function _request() internal pure returns (IUserAccount.OrderRequest memory r) {
@@ -105,21 +105,21 @@ contract UserAccountTest is Test {
     function test_lock_onlyAdapter() public {
         vm.prank(stranger);
         vm.expectRevert(IUserAccount.NotAdapter.selector);
-        account.lock(ORDER, WNT, COLLATERAL, FEE, 2, 0);
+        account.lock(ORDER, WNT, COLLATERAL, FEE, 2, 0, 0);
     }
 
 
     function test_lock_rejectsMoreThanFreeBalance() public {
         vm.prank(adapter);
         vm.expectRevert(abi.encodeWithSelector(IUserAccount.InsufficientFreeBalance.selector, 3 ether, 2 ether));
-        account.lock(ORDER, WNT, 3 ether, 0, 0, 0);
+        account.lock(ORDER, WNT, 3 ether, 0, 0, 0, 0);
     }
 
     function test_lock_rejectsReusedOrderId() public {
         _lock();
         vm.prank(adapter);
         vm.expectRevert(abi.encodeWithSelector(IUserAccount.LockExists.selector, ORDER));
-        account.lock(ORDER, WNT, 0.1 ether, 0, 0, 0);
+        account.lock(ORDER, WNT, 0.1 ether, 0, 0, 0, 0);
     }
 
     function test_release_returnsReserveToFreeBalance() public {

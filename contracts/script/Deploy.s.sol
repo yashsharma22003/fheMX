@@ -119,7 +119,9 @@ contract Deploy is Script {
             minCheckInterval: uint32(vm.parseJsonUint(json, ".adapter.minCheckIntervalSeconds")),
             callbackGasLimit: uint32(vm.parseJsonUint(json, ".adapter.callbackGasLimit")),
             gmxReader: vm.parseJsonAddress(json, ".gmx.reader"),
-            gmxDataStore: vm.parseJsonAddress(json, ".gmx.dataStore")
+            gmxDataStore: vm.parseJsonAddress(json, ".gmx.dataStore"),
+            checkFee: vm.parseJsonUint(json, ".adapter.checkFeeWei"),
+            checkFeeSpread: vm.parseJsonUint(json, ".adapter.checkFeeSpreadWei")
         });
     }
 

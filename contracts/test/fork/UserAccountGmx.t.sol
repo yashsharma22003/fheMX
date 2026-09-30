@@ -47,7 +47,7 @@ contract UserAccountGmxForkTest is Test {
         (bool ok,) = address(account).call{value: 0.1 ether}("");
         assertTrue(ok);
 
-        account.lock(ORDER, gmx.wnt, COLLATERAL, EXECUTION_FEE, 2, PROTOCOL_FEE_RESERVE);
+        account.lock(ORDER, gmx.wnt, COLLATERAL, EXECUTION_FEE, 2, PROTOCOL_FEE_RESERVE, 0);
     }
 
     function _submit() internal returns (bytes32 gmxKey) {
@@ -206,7 +206,7 @@ contract UserAccountGmxForkTest is Test {
         address usdc = ethUsd.shortToken;
         deal(usdc, address(account), 100e6);
         bytes32 order2 = keccak256("usdc-order");
-        account.lock(order2, usdc, 50e6, EXECUTION_FEE, 2, 1e6);
+        account.lock(order2, usdc, 50e6, EXECUTION_FEE, 2, 1e6, 0);
         bytes32 gmxKey = account.submit(
             order2,
             IUserAccount.OrderRequest({

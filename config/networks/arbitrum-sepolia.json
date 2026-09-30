@@ -68,7 +68,7 @@
     "USDC_USD": "0x0153002d20B96532C639313c2d54c3dA09109309"
   },
   "adapter": {
-    "comment": "Deployment parameters for SealedOrderAdapter (all immutable once deployed). Testnet values; revisit before mainnet (design \u00a710). priceFeeds: per-token Chainlink feed and max age (USDC/USD updates every 24 h on Sepolia).",
+    "comment": "Deployment parameters for SealedOrderAdapter (all immutable once deployed). Testnet values; revisit before mainnet (design \u00a710). priceFeeds: per-token Chainlink feed and max age (USDC/USD updates every 24 h on Sepolia). checkFeeWei: per order checked, from the order's check budget (live check ~700k gas ~ 0.000035-0.00004 ETH at 0.05 gwei, 2026-09-30); checkFeeSpreadWei (10%) goes to the fee collector, the rest to the checker.",
     "markets": [
       "ETH_USD",
       "BTC_USD"
@@ -100,6 +100,8 @@
         "feed": "USDC_USD",
         "maxAgeSeconds": 90000
       }
-    ]
+    ],
+    "checkFeeWei": "50000000000000",
+    "checkFeeSpreadWei": "5000000000000"
   }
 }

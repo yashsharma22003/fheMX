@@ -122,11 +122,12 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         uint256 collateral,
         uint256 feePerAttempt,
         uint8 attempts,
-        uint256 protocolFeeReserve
+        uint256 protocolFeeReserve,
+        uint256 checkBudget
     ) external onlyAdapter {
         if (_locks[orderId].token != address(0) || _outcomes[orderId] != GmxOutcome.None) revert LockExists(orderId);
 
-        uint256 fees = feePerAttempt * attempts;
+        uint256 fees = feePerAttempt * attempts + checkBudget;
         uint256 inToken = collateral + protocolFeeReserve;
         if (collateralToken == wnt) {
             _reserve(wnt, inToken + fees);
@@ -135,7 +136,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
             _reserve(wnt, fees);
         }
 
-        _locks[orderId] = Lock(collateralToken, collateral, feePerAttempt, attempts, protocolFeeReserve);
+        _locks[orderId] = Lock(collateralToken, collateral, feePerAttempt, attempts, protocolFeeReserve, checkBudget);
         emit Locked(orderId, collateralToken, collateral, fees, protocolFeeReserve);
     }
 
@@ -145,7 +146,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         if (_outcomes[orderId] == GmxOutcome.Pending) revert OrderInFlight(orderId);
 
         uint256 inToken = l.collateral + l.protocolFeeReserve;
-        uint256 fees = l.feePerAttempt * l.attemptsLeft;
+        uint256 fees = l.feePerAttempt * l.attemptsLeft + l.checkBudget;
         delete _locks[orderId];
         _locked[l.token] -= inToken;
         _locked[wnt] -= fees;
@@ -217,6 +218,30 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         l.protocolFeeReserve = 0;
         _send(l.token, feeCollector, amount);
         emit ProtocolFeePaid(orderId, feeCollector, amount);
+    }
+
+    function payCheckFee(bytes32 orderId, address checker, uint256 reward, uint256 spread)
+        external
+        onlyAdapter
+        nonReentrant
+    {
+        Lock storage l = _locks[orderId];
+        if (l.token == address(0)) revert NoLock(orderId);
+        uint256 total = reward + spread;
+        if (total > l.checkBudget) revert InsufficientCheckBudget(orderId, total, l.checkBudget);
+        l.checkBudget -= total;
+        _locked[wnt] -= total;
+        _send(wnt, checker, reward);
+        _send(wnt, feeCollector, spread);
+        emit CheckFeePaid(orderId, checker, reward, spread);
+    }
+
+    function addCheckBudget(bytes32 orderId, uint256 amount) external onlyAdapter {
+        Lock storage l = _locks[orderId];
+        if (l.token == address(0)) revert NoLock(orderId);
+        _reserve(wnt, amount);
+        l.checkBudget += amount;
+        emit CheckBudgetAdded(orderId, amount);
     }
 
     // ─── reconcile (known issue 9) ────────────────────────────────────────────

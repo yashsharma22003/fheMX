@@ -115,6 +115,16 @@ export const sealedOrderAdapterAbi = [
             "name": "gmxDataStore",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "checkFee",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "checkFeeSpread",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -201,6 +211,32 @@ export const sealedOrderAdapterAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkFee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "checkFeeSpread",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -810,6 +846,11 @@ export const sealedOrderAdapterAbi = [
             "internalType": "uint32"
           },
           {
+            "name": "checkBudget",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
             "name": "isLong",
             "type": "bytes32",
             "internalType": "externalEbool"
@@ -848,6 +889,24 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "function",
+    "name": "topUpCheckBudget",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "wnt",
     "inputs": [],
     "outputs": [
@@ -858,6 +917,25 @@ export const sealedOrderAdapterAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "CheckBudgetToppedUp",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1060,6 +1138,22 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "error",
+    "name": "CheckBudgetTooLow",
+    "inputs": [
+      {
+        "name": "budget",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "checkFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "CheckTooSoon",
     "inputs": [
       {
@@ -1192,6 +1286,11 @@ export const sealedOrderAdapterAbi = [
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1378,6 +1477,24 @@ export const userAccountAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "addCheckBudget",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -3384,6 +3501,11 @@ export const userAccountAbi = [
         "name": "protocolFeeReserve",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "checkBudget",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -3427,6 +3549,11 @@ export const userAccountAbi = [
           },
           {
             "name": "protocolFeeReserve",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "checkBudget",
             "type": "uint256",
             "internalType": "uint256"
           }
@@ -3516,6 +3643,34 @@ export const userAccountAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "payCheckFee",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "checker",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "reward",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "spread",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -4046,6 +4201,56 @@ export const userAccountAbi = [
   },
   {
     "type": "event",
+    "name": "CheckBudgetAdded",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "CheckFeePaid",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "checker",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "reward",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "spread",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "GmxOutcomeRecorded",
     "inputs": [
       {
@@ -4355,6 +4560,27 @@ export const userAccountAbi = [
         "name": "outcome",
         "type": "uint8",
         "internalType": "enum IUserAccount.GmxOutcome"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientCheckBudget",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "required",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "available",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },

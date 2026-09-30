@@ -66,7 +66,7 @@ contract UserAccountRecoveryTest is Test {
 
     function _lockAndSubmitEth() internal returns (bytes32 gmxKey) {
         vm.startPrank(adapter);
-        account.lock(ORDER, WNT, 0.5 ether, FEE, 2, 0.01 ether);
+        account.lock(ORDER, WNT, 0.5 ether, FEE, 2, 0.01 ether, 0);
         gmxKey = account.submit(ORDER, _request(0.5 ether));
         vm.stopPrank();
         dataStore.setContains(ORDER_LIST, gmxKey, true);
@@ -85,7 +85,7 @@ contract UserAccountRecoveryTest is Test {
 
     function test_erc20_collateralAndReserveInToken_feesInEth() public {
         vm.prank(adapter);
-        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6);
+        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6, 0);
 
         assertEq(account.freeBalance(address(usdc)), 10_000e6 - 1_010e6);
         assertEq(account.freeBalance(WNT), 1 ether - 2 * FEE);
@@ -93,7 +93,7 @@ contract UserAccountRecoveryTest is Test {
 
     function test_erc20_submitSendsTokensThroughRouterAndFeeAsEth() public {
         vm.startPrank(adapter);
-        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6);
+        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6, 0);
         account.submit(ORDER, _usdcRequest(1_000e6));
         vm.stopPrank();
 
@@ -105,7 +105,7 @@ contract UserAccountRecoveryTest is Test {
 
     function test_erc20_protocolFeePaidInCollateralToken() public {
         vm.startPrank(adapter);
-        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6);
+        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6, 0);
         bytes32 gmxKey = account.submit(ORDER, _usdcRequest(1_000e6));
         vm.stopPrank();
         vm.prank(gmxHandler);
@@ -118,7 +118,7 @@ contract UserAccountRecoveryTest is Test {
 
     function test_withdraw_erc20FreeBalanceOnly() public {
         vm.prank(adapter);
-        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 0);
+        account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 0, 0);
         vm.startPrank(owner);
         vm.expectRevert(abi.encodeWithSelector(IUserAccount.InsufficientFreeBalance.selector, 9_001e6, 9_000e6));
         account.withdraw(address(usdc), 9_001e6, owner);
@@ -215,7 +215,7 @@ contract UserAccountRecoveryTest is Test {
         dataStore.setContains(ORDER_LIST, closeKey, true);
 
         vm.startPrank(adapter);
-        account.lock(ORDER, WNT, 0.5 ether, FEE, 2, 0);
+        account.lock(ORDER, WNT, 0.5 ether, FEE, 2, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(IUserAccount.ManualCloseInFlight.selector, closeKey));
         account.submit(ORDER, _request(0.5 ether));
         vm.stopPrank();
@@ -248,7 +248,7 @@ contract UserAccountRecoveryTest is Test {
         IUserAccount.OrderRequest memory r = _request(0);
         r.isIncrease = false;
         vm.startPrank(adapter);
-        account.lock(ORDER, WNT, 0, FEE, 2, 0);
+        account.lock(ORDER, WNT, 0, FEE, 2, 0, 0);
         gmxKey = account.submit(ORDER, r);
         vm.stopPrank();
         dataStore.setContains(ORDER_LIST, gmxKey, true);

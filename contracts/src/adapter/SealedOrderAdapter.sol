@@ -8,6 +8,7 @@ import {UserAccountFactory} from "../account/UserAccountFactory.sol";
 import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
 import {IGmxReader, GmxPricing} from "../interfaces/gmx/IGmxReader.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 interface IGmxDataStoreRead {
     function getUint(bytes32 key) external view returns (uint256);
@@ -26,7 +27,7 @@ interface IGmxDataStoreRead {
 ///        trigger price: USD with 8 decimals (euint64)
 ///        slippage:      basis points (euint32)
 ///      All parameters are immutable (design §6: no admin, caps set at deployment).
-contract SealedOrderAdapter {
+contract SealedOrderAdapter is ReentrancyGuardTransient {
     enum OrderKind {
         LimitIncrease,
         StopLoss,
@@ -76,6 +77,10 @@ contract SealedOrderAdapter {
         uint32 callbackGasLimit;
         address gmxReader;
         address gmxDataStore;
+        /// @dev ETH charged to the order's check budget per order checked (design D3); 0 disables
+        uint256 checkFee;
+        /// @dev part of `checkFee` that goes to the fee collector (fee-model.md §6); the rest goes to the checker
+        uint256 checkFeeSpread;
     }
 
     /// @dev `collateral` is posted collateral for a limit entry and must be 0 for stop-loss/take-profit.
@@ -89,6 +94,8 @@ contract SealedOrderAdapter {
         uint256 collateral;
         uint256 executionFee;
         uint32 fallbackSlippageBps;
+        /// @dev ETH locked to pay per-check fees; at least one check's fee, topped up with `topUpCheckBudget`
+        uint256 checkBudget;
         externalEbool isLong;
         externalEuint64 sizeUsd6;
         externalEuint64 triggerPrice8;
@@ -161,6 +168,8 @@ contract SealedOrderAdapter {
     uint32 public immutable callbackGasLimit;
     IGmxReader public immutable gmxReader;
     address public immutable gmxDataStore;
+    uint256 public immutable checkFee;
+    uint256 public immutable checkFeeSpread;
 
     mapping(address market => MarketInfo) private _markets;
     mapping(bytes32 orderId => SealedOrder) private _orders;
@@ -186,6 +195,7 @@ contract SealedOrderAdapter {
     event OrderVoided(bytes32 indexed orderId);
     event OrderRearmed(bytes32 indexed orderId, bytes32 indexed gmxKey, uint256 sizeDeltaUsd, uint256 acceptablePrice);
     event OrderFilled(bytes32 indexed orderId, uint256 protocolFee);
+    event CheckBudgetToppedUp(bytes32 indexed orderId, uint256 amount);
 
     error UnsupportedMarket(address market);
     error ZeroCollateral();
@@ -207,12 +217,14 @@ contract SealedOrderAdapter {
     error NotFilled(bytes32 orderId);
     error NotRearmable(bytes32 orderId);
     error UnsupportedDecimals(address token, uint8 decimals);
+    error CheckBudgetTooLow(uint256 budget, uint256 checkFee);
 
     constructor(Config memory cfg) {
         if (cfg.minSizeUsd6 == 0 || cfg.minSizeUsd6 > cfg.maxSizeUsd6 || cfg.maxLeverage == 0) revert InvalidConfig();
         if (cfg.maxSlippageBps >= BPS || cfg.maxFallbackSlippageBps >= BPS || cfg.increaseFeeBps > BPS) {
             revert InvalidConfig();
         }
+        if (cfg.checkFeeSpread > cfg.checkFee) revert InvalidConfig();
         factory = new UserAccountFactory(cfg.accountImplementation, address(this));
         wnt = cfg.wnt;
         minSizeUsd6 = cfg.minSizeUsd6;
@@ -229,6 +241,8 @@ contract SealedOrderAdapter {
         callbackGasLimit = cfg.callbackGasLimit;
         gmxReader = IGmxReader(cfg.gmxReader);
         gmxDataStore = cfg.gmxDataStore;
+        checkFee = cfg.checkFee;
+        checkFeeSpread = cfg.checkFeeSpread;
         for (uint256 i; i < cfg.markets.length; i++) {
             MarketConfig memory m = cfg.markets[i];
             _markets[m.market] = MarketInfo({
@@ -247,7 +261,7 @@ contract SealedOrderAdapter {
     /// @notice Submit a sealed order. Encrypted inputs must be created for this contract by msg.sender.
     ///         Funds must already sit in msg.sender's account (its address is `factory.accountOf(msg.sender)`,
     ///         fundable before it exists); the account is created on first use.
-    function submitOrder(SealedOrderInput calldata input) external returns (bytes32 orderId) {
+    function submitOrder(SealedOrderInput calldata input) external nonReentrant returns (bytes32 orderId) {
         MarketInfo memory m = _markets[input.market];
         if (m.indexToken == address(0)) revert UnsupportedMarket(input.market);
         if (input.collateralToken != m.longToken && input.collateralToken != m.shortToken) {
@@ -263,6 +277,7 @@ contract SealedOrderAdapter {
         if (input.fallbackSlippageBps > maxFallbackSlippageBps) {
             revert FallbackSlippageTooHigh(input.fallbackSlippageBps, maxFallbackSlippageBps);
         }
+        if (input.checkBudget < checkFee) revert CheckBudgetTooLow(input.checkBudget, checkFee);
 
         address account = factory.accountOf(msg.sender);
         if (account.code.length == 0) factory.createAccount(msg.sender);
@@ -296,7 +311,8 @@ contract SealedOrderAdapter {
             input.collateral,
             input.executionFee,
             EXECUTION_ATTEMPTS,
-            protocolFeeReserve
+            protocolFeeReserve,
+            input.checkBudget
         );
 
         emit OrderSealed(
@@ -319,9 +335,18 @@ contract SealedOrderAdapter {
         o.slippageBps = euint32.wrap(handles[3]);
     }
 
+    /// @notice Add free ETH from the owner's account to an open order's check budget.
+    function topUpCheckBudget(bytes32 orderId, uint256 amount) external {
+        SealedOrder storage o = _orders[orderId];
+        if (o.owner != msg.sender) revert NotOrderOwner(orderId);
+        if (o.status != Status.Open) revert OrderNotOpen(orderId);
+        IUserAccount(o.account).addCheckBudget(orderId, amount);
+        emit CheckBudgetToppedUp(orderId, amount);
+    }
+
     /// @notice Cancel a sealed order before it fires, or close one whose GMX order was cancelled.
     ///         Before firing, reveals only that an order existed.
-    function cancelOrder(bytes32 orderId) external {
+    function cancelOrder(bytes32 orderId) external nonReentrant {
         SealedOrder storage o = _orders[orderId];
         if (o.owner != msg.sender) revert NotOrderOwner(orderId);
         if (o.status != Status.Open && !(o.status == Status.Fired && _gmxCancelled(o.account, orderId))) {
@@ -339,7 +364,9 @@ contract SealedOrderAdapter {
     ///      slippage are then made publicly decryptable as select(fired, value, 0): a non-fired check decrypts
     ///      to zeros and reveals only "not yet". The trigger price is never decrypted.
     /// @param report passed to the verifier for the index price (ignored by Chainlink Data Feeds)
-    function checkBatch(address market, bytes32[] calldata orderIds, bytes calldata report) external {
+    ///      Each order checked pays `checkFee` from its check budget: the caller gets `checkFee - checkFeeSpread`
+    ///      for its gas, the fee collector gets the spread. An order without enough budget reverts the batch.
+    function checkBatch(address market, bytes32[] calldata orderIds, bytes calldata report) external nonReentrant {
         MarketInfo memory m = _markets[market];
         if (m.indexToken == address(0)) revert UnsupportedMarket(market);
         (uint256 price8, uint256 reportTimestamp) = priceVerifier.price(m.indexToken, report);
@@ -394,6 +421,10 @@ contract SealedOrderAdapter {
         c.lastReportTimestamp = uint64(reportTimestamp);
         c.checkPrice8 = price8;
         emit OrderChecked(orderId, price8, reportTimestamp);
+
+        if (checkFee != 0) {
+            IUserAccount(o.account).payCheckFee(orderId, msg.sender, checkFee - checkFeeSpread, checkFeeSpread);
+        }
     }
 
     /// @dev Limit entry and stop-loss fire at or below the trigger for a long, at or above for a short;
@@ -418,7 +449,7 @@ contract SealedOrderAdapter {
         bytes calldata isLongSignature,
         uint32 slippage,
         bytes calldata slippageSignature
-    ) external returns (bytes32 gmxKey) {
+    ) external nonReentrant returns (bytes32 gmxKey) {
         if (_orders[orderId].status != Status.Open) revert OrderNotOpen(orderId);
         CheckState storage c = _checks[orderId];
         if (c.lastCheckAt == 0) revert NotChecked(orderId);
@@ -454,7 +485,7 @@ contract SealedOrderAdapter {
     /// @dev Uses the price the order fired at, with the wider of the user's public fallback slippage and their
     ///      sealed slippage, and re-runs the execute-time checks (live-position trim for decreases). Not allowed
     ///      if the owner cancelled the GMX order themselves.
-    function rearm(bytes32 orderId) external returns (bytes32 gmxKey) {
+    function rearm(bytes32 orderId) external nonReentrant returns (bytes32 gmxKey) {
         SealedOrder storage o = _orders[orderId];
         Fill storage f = _fills[orderId];
         if (o.status != Status.Fired || f.rearmed || !_gmxCancelled(o.account, orderId)) revert NotRearmable(orderId);
@@ -469,7 +500,7 @@ contract SealedOrderAdapter {
     // ─── settle (design §4 step 7, fee-model.md) ──────────────────────────────
 
     /// @notice After GMX reports the fill: pay the protocol fee and free the rest of the lock. Permissionless.
-    function settle(bytes32 orderId) external {
+    function settle(bytes32 orderId) external nonReentrant {
         SealedOrder storage o = _orders[orderId];
         if (o.status != Status.Fired) revert NotFired(orderId);
         (IUserAccount.GmxOutcome outcome,) = IUserAccount(o.account).outcomeOf(orderId);

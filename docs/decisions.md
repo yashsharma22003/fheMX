@@ -60,6 +60,9 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-30 | — | Each token's feed has its own max age in the verifier (Sepolia: ETH and BTC 300 s, USDC 25 h); the adapter keeps its stricter trigger-age rule for the index price. | Chainlink stablecoin feeds update on a 24 h heartbeat; one global age would block every check or accept stale volatile prices. | One max age for everything. |
 | 2026-09-30 | — | A limit entry's protocol fee is charged in its collateral token, converted at the collateral price recorded by the fired check. | The fee comes out of the reserve the user already locked in that token. | Fee always in ETH. |
 
+| 2026-09-30 | D3 | Per-check fee: each order checked pays a fixed `checkFee` (ETH, immutable) from its own **check budget**, locked at intake and topped up by the owner; `checkFee - checkFeeSpread` reimburses the caller (`msg.sender`), the spread goes to the fee collector; unused budget is freed on fill or cancel. Sepolia: 0.00005 ETH, 10% spread, sized from the live run (~700k gas per check at 0.05 gwei). | With Data Feeds, spam is already bounded (one check per order per feed update, caller pays gas), so the open need is paying honest checkers for gas (liveness) plus the fee spec's spread. The budget is public but says nothing about the trigger. | D3 as drafted: caller pays a fee, refunded or rewarded on a fire. |
+| 2026-09-30 | — | Adapter entry points (`submitOrder`, `checkBatch`, `execute`, `rearm`, `settle`, `cancelOrder`) are `nonReentrant`. | Checks now send ETH to an arbitrary caller. A re-entering checker makes its own payment fail (tested). | — |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

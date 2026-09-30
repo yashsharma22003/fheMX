@@ -75,6 +75,14 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Tests: 10 multi-market unit tests; fork demo: a sealed BTC long with USDC collateral fires on the real BTC feed, fills on live GMX and pays its fee in USDC.
 - Redeployed live as v2 on 2026-09-30 and confirmed with a sealed limit entry and a stop-loss ([live-run-2026-09-30.md](live-run-2026-09-30.md#v2-redeploy-multi-market)).
 
+## Done: per-check fee (known issue 11)
+
+- Each order checked pays `checkFee` from a check budget locked at intake (ETH, owner can top up); the caller is reimbursed `checkFee - checkFeeSpread`, the collector gets the spread; unused budget returns on fill or cancel. Entry points made `nonReentrant`.
+- Sepolia config: 0.00005 ETH per check, 10% spread, from the live cost (~700k gas).
+- Checker skips orders without budget for another check; client adds `--check-budget`, `topup`, and shows checks left.
+- Tests: 9 unit tests incl. budget exhaustion, top-up, refunds on cancel and fill, batch charging, a re-entering checker.
+- Not yet live: needs a redeploy (v3).
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -94,7 +102,6 @@ First demo scope: limit entries only; stop-loss and take-profit arrive in milest
 
 ## Next candidates
 
-1. Per-check fee (known issue 11), sized from the live numbers.
 2. Checker hardening (known issues 16, 17): own key, retry executes, batch reads, parallel decrypts, persisted cursor.
 4. Mainnet readiness: parameters, sequencer-uptime feed, audit.
 

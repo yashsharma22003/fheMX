@@ -68,7 +68,7 @@ Anyone may call `checkBatch(orderIds[], report)` (a single id is a batch of one)
 - Maximum report age of a few seconds relative to `block.timestamp` (value to set after latency measurement)
 - Report timestamp strictly greater than the last one used for that order
 - A minimum interval between checks per order, so rapid calls can't tighten the fire-time bracket beyond design
-- A per-check fee paid by the caller, refunded or rewarded on a successful fire, to cover FHE and verification costs and make griefing cost the griefer
+- A per-check fee paid by the caller, refunded or rewarded on a successful fire, to cover FHE and verification costs and make griefing cost the griefer *(implemented differently, 2026-09-30: each order pays a fixed fee per check from its own check budget, reimbursing the checker and paying a spread to the collector; see decisions.md)*
 
 The Data Streams subscription is a real dependency: someone must hold access credentials to fetch reports. That is a data-access key, not an execution key, and must be stated in the trust model.
 

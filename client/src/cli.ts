@@ -8,6 +8,7 @@
 //   pnpm -F client cli order --kind stop  --side long --size 100 --trigger 2300 --slippage 100
 //   pnpm -F client cli fund-token USDC_SG 50
 //   pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
+//   pnpm -F client cli topup 1 0.001        (add to order 1's check budget)
 //   pnpm -F client cli status 1
 //   pnpm -F client cli cancel 1
 //   pnpm -F client cli withdraw 0.01
@@ -103,6 +104,7 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
         fallback: { type: "string", default: "800" },
         collateral: { type: "string", default: "0" },
         fee: { type: "string", default: "0.001" },
+        "check-budget": { type: "string", default: "0.001" },
       },
     });
     const kind = { limit: OrderKind.LimitIncrease, stop: OrderKind.StopLoss, tp: OrderKind.TakeProfit }[values.kind!];
@@ -135,6 +137,7 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
           collateral: kind === OrderKind.LimitIncrease ? parseUnits(values.collateral!, collateralToken.decimals) : 0n,
           executionFee: parseEther(values.fee!),
           fallbackSlippageBps: Number(values.fallback),
+          checkBudget: parseEther(values["check-budget"]!),
           isLong,
           sizeUsd6: size,
           triggerPrice8: trigger,
@@ -145,6 +148,10 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     });
     await wait("submitOrder", hash);
     const count = await c.publicClient.readContract({ ...adapter, functionName: "orderCount" });
+    const checkFee = await c.publicClient.readContract({ ...adapter, functionName: "checkFee" });
+    if (checkFee > 0n) {
+      console.log(`check budget pays for ${parseEther(values["check-budget"]!) / checkFee} checks at ${formatEther(checkFee)} ETH each`);
+    }
     console.log(`order id ${count} (only side/size/trigger/slippage ciphertext is on-chain)`);
   },
 
@@ -154,11 +161,28 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     const check = await c.publicClient.readContract({ ...adapter, functionName: "checkOf", args: [orderId] });
     const fill = await c.publicClient.readContract({ ...adapter, functionName: "fillOf", args: [orderId] });
     console.log(`status   ${Status[o.status]}  kind ${Object.keys(OrderKind)[o.kind]}  account ${o.account}`);
+    if (Status[o.status] === "Open") {
+      const lock = await c.publicClient.readContract({ address: o.account, abi: userAccountAbi, functionName: "lockOf", args: [orderId] });
+      const checkFee = await c.publicClient.readContract({ ...adapter, functionName: "checkFee" });
+      const left = checkFee > 0n ? ` (${lock.checkBudget / checkFee} checks left)` : "";
+      console.log(`budget   ${formatEther(lock.checkBudget)} ETH${left}`);
+    }
     if (check.lastCheckAt) console.log(`checked  at ${new Date(Number(check.lastCheckAt) * 1000).toISOString()}, price $${fromPrice8(check.checkPrice8)}`);
     if (fill.gmxKey !== pad("0x0", { size: 32 })) {
       const [outcome] = await c.publicClient.readContract({ address: o.account, abi: userAccountAbi, functionName: "outcomeOf", args: [orderId] });
       console.log(`fired    size $${Number(fill.sizeDeltaUsd / 10n ** 24n) / 1e6}, ${fill.isLong ? "long" : "short"}, GMX ${GmxOutcome[outcome]}${fill.rearmed ? " (re-armed)" : ""}`);
     }
+  },
+
+  async topup([id, amount]) {
+    await wait(
+      "topUpCheckBudget",
+      await c.walletClient.writeContract({
+        ...adapter,
+        functionName: "topUpCheckBudget",
+        args: [orderIdArg(id), parseEther(amount ?? "0")],
+      }),
+    );
   },
 
   async cancel([id]) {

@@ -37,6 +37,8 @@ interface IUserAccount {
         uint256 feePerAttempt;
         uint8 attemptsLeft;
         uint256 protocolFeeReserve;
+        /// @dev ETH that pays the per-check fee (design D3); unused budget is freed on release
+        uint256 checkBudget;
     }
 
     event Initialized(address indexed owner, address indexed adapter);
@@ -46,6 +48,8 @@ interface IUserAccount {
     event GmxOutcomeRecorded(bytes32 indexed orderId, bytes32 indexed gmxKey, GmxOutcome outcome);
     event Reconciled(bytes32 indexed orderId, GmxOutcome outcome);
     event ProtocolFeePaid(bytes32 indexed orderId, address indexed collector, uint256 amount);
+    event CheckFeePaid(bytes32 indexed orderId, address indexed checker, uint256 reward, uint256 spread);
+    event CheckBudgetAdded(bytes32 indexed orderId, uint256 amount);
     event ManualCloseSubmitted(bytes32 indexed gmxKey, address market, address collateralToken, bool isLong, uint256 sizeDeltaUsd);
 
     error AlreadyInitialized();
@@ -68,21 +72,29 @@ interface IUserAccount {
     error ManualCloseInFlight(bytes32 gmxKey);
     error OrderStillAtGmx(bytes32 gmxKey);
     error CannotReconcile(bytes32 orderId);
+    error InsufficientCheckBudget(bytes32 orderId, uint256 required, uint256 available);
 
     function initialize(address owner, address adapter) external;
     function owner() external view returns (address);
     function adapter() external view returns (address);
 
     /// @notice Reserve collateral and a protocol-fee reserve (in `collateralToken`) plus `attempts`
-    ///         execution fees (in ETH) for one sealed order.
+    ///         execution fees and a check budget (in ETH) for one sealed order.
     function lock(
         bytes32 orderId,
         address collateralToken,
         uint256 collateral,
         uint256 feePerAttempt,
         uint8 attempts,
-        uint256 protocolFeeReserve
+        uint256 protocolFeeReserve,
+        uint256 checkBudget
     ) external;
+
+    /// @notice Pay one check's fee from the order's check budget: `reward` to the checker, `spread` to the collector.
+    function payCheckFee(bytes32 orderId, address checker, uint256 reward, uint256 spread) external;
+
+    /// @notice Add free ETH to an order's check budget.
+    function addCheckBudget(bytes32 orderId, uint256 amount) external;
 
     /// @notice Return an order's remaining reserve to the free balance.
     function release(bytes32 orderId) external;
