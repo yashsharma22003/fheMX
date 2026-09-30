@@ -1,0 +1,9 @@
+{
+  "accountImplementation": "0x0BE2f1c3fCf6C781F35E850177014A1f58975ac1",
+  "adapter": "0xebC2fd3913BB7771126ea310691aBfb32F5dAB26",
+  "chainId": 421614,
+  "deployer": "0xf9Ab0C3C503d22f52f23E3dEabD8ad7B70680CF9",
+  "factory": "0x459A7351c55e0A867d0Dc3b174c2bb80443e270B",
+  "feeCollector": "0xf9Ab0C3C503d22f52f23E3dEabD8ad7B70680CF9",
+  "priceVerifier": "0x92857EBC565e3BD05dC089087442E95407C5743e"
+}
