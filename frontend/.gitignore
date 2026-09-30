@@ -1,0 +1,10 @@
+# Dependencies and build output
+node_modules
+.next/
+*.tsbuildinfo
+
+# Environment variables
+.env*.local
+
+# OS files
+.DS_Store

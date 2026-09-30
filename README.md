@@ -9,6 +9,7 @@ A privacy adapter that keeps conditional GMX V2 orders (limit entry, stop-loss, 
 | `contracts/` | On-chain (Foundry) | `src/adapter` order book and trigger logic, `src/account` per-user GMX account clones, `src/oracle` Data Streams report handling, `src/interfaces` vendored GMX and Chainlink interfaces. `test/unit` runs on CoFHE mocks, `test/fork` against an Arbitrum Sepolia fork, `test/helpers` shared test code. `script/` deploy scripts. |
 | `checker/` | Off-chain keeper (TypeScript) | On each Chainlink feed update calls `checkBatch`, decrypts results through CoFHE, calls `execute`, `settle`, `rearm`, `reconcile`. Permissionless; logs latency and gas to `checker/metrics.jsonl`. |
 | `client/` | User side (TypeScript) | CLI: fund your account, encrypt and submit sealed orders with `@cofhe/sdk`, status, cancel, withdraw. |
+| `frontend/` | Web app (Next.js) | Trade, Orders, Account and Settings pages: encrypts orders in the browser with `@cofhe/sdk`, reads addresses from `deployments/` and ABIs from `shared`. Wallet through RainbowKit / wagmi. |
 | `shared/` | TypeScript library | Config and deployment loading, viem + CoFHE clients, fixed-point helpers, ABIs generated from `contracts/out`. |
 | `config/networks/` | Shared config | Network addresses (GMX, tokens, Chainlink feeds) and adapter deployment parameters, read by tests, the deploy script and the TypeScript packages. |
 | `deployments/` | Deployed addresses | Written by the deploy script. |
@@ -30,8 +31,10 @@ cp .env.example .env   # optional; fork tests fall back to the public RPC
 | `pnpm build` | Compile contracts |
 | `pnpm test` | Unit tests on CoFHE mocks (no network) |
 | `pnpm test:fork` | Fork tests against Arbitrum Sepolia; checks the GMX addresses in `config/` are still live |
-| `pnpm typecheck` | Typecheck `shared`, `checker` and `client` |
-| `pnpm abis` | Rebuild contracts and regenerate `shared/src/abis.ts` |
+| `pnpm typecheck` | Typecheck `shared`, `checker`, `client` and `frontend` |
+| `pnpm abis` | Rebuild contracts and regenerate `shared/src/abis.ts` and `shared/src/deployment.ts` |
+| `pnpm web` | Run the web app at http://localhost:3000 against the current deployment |
+| `pnpm web:build` | Production build of the web app |
 
 ## Deploy and run on Arbitrum Sepolia
 

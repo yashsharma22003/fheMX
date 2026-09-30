@@ -6,8 +6,10 @@
     "build": "pnpm -F contracts build",
     "test": "pnpm -F contracts test",
     "test:fork": "pnpm -F contracts test:fork",
-    "typecheck": "pnpm -F shared -F checker -F client typecheck",
-    "abis": "pnpm -F contracts build && pnpm -F shared abis"
+    "typecheck": "pnpm -F shared -F checker -F client -F frontend typecheck",
+    "abis": "pnpm -F contracts build && pnpm -F shared abis",
+    "web": "pnpm -F frontend dev",
+    "web:build": "pnpm -F frontend build"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -109,7 +109,7 @@ For stop-loss / take-profit, side and size are largely inferable from the user's
 | `deployments/arbitrum-sepolia.json` | Live adapter, factory, verifier, account implementation addresses | Yes (import JSON) |
 | `client/src/cli.ts` | A working Node CLI doing every user action (fund, order, status, topup, cancel, withdraw). **Use it as the reference implementation** for call shapes. | Pattern only |
 
-> **Deployment/ABI version note.** `shared/src/abis.ts` matches the current contract code, which includes the per-order **check budget** (`checkBudget` field, `topUpCheckBudget`). The deployment currently recorded in `deployments/arbitrum-sepolia.json` (v2, adapter `0xebC2fd3913BB7771126ea310691aBfb32F5dAB26`) predates that field. A v3 deployment with the current code is needed before the frontend's `submitOrder` will work against the live chain. Always read addresses from `deployments/arbitrum-sepolia.json`; don't hardcode them.
+> **Deployment/ABI version note.** `shared/src/abis.ts` matches the current contract code, including the per-order **check budget** (`checkBudget` field, `topUpCheckBudget`). The current deployment in `deployments/arbitrum-sepolia.json` is v3 (adapter `0x683f2d0E8943424865f3A6f363454e7de649D4a3`), built from that code. Always read addresses from `deployments/arbitrum-sepolia.json`; don't hardcode them.
 
 ---
 
@@ -322,7 +322,7 @@ This is the product's main explanation. Make it prominent, animated when an orde
    - "Your positions" panel: for each market, collateral token and side, `account.positionSizeUsd(...)`; for each, "Add sealed stop-loss / take-profit" and "Close position".
 3. **Orders.** List of the user's orders (from `OrderSealed` logs), each with state badge (§3), market, type, public terms, checks done / left, last check price, and the lifecycle timeline (§10.4). Actions: Unlock details, Top up budget, Cancel.
 4. **Account.** Account address (with explorer link and "created on first order" note), free vs locked ETH / USDC.SG / BTC, Deposit (ETH transfer; ERC20 transfer), Withdraw (free only). Explain: "Your account is a contract only you control. The adapter can move funds only into your own GMX orders."
-5. **Transparency / About.** Contract addresses (from the deployment file) with explorer links, the trust model in plain words (§10.5), live stats if cheap to compute (orders sealed, fills, from events), known limitations (§11).
+5. ~~Transparency / About~~. Dropped on 2026-09-30; the app has Trade, Orders, Account and Settings only. The trust model (§10.5) stays in the docs.
 6. **Demo mode** (§10.6).
 
 ### 10.3 Order ticket
