@@ -47,12 +47,6 @@ library GmxKeys {
     bytes32 internal constant RESERVE_FACTOR = keccak256(abi.encode("RESERVE_FACTOR"));
     bytes32 internal constant OPEN_INTEREST_RESERVE_FACTOR = keccak256(abi.encode("OPEN_INTEREST_RESERVE_FACTOR"));
 
-    bytes32 internal constant POSITION_IMPACT_FACTOR = keccak256(abi.encode("POSITION_IMPACT_FACTOR"));
-
-    function positionImpactFactorKey(address market, bool isPositive) internal pure returns (bytes32) {
-        return keccak256(abi.encode(POSITION_IMPACT_FACTOR, market, isPositive));
-    }
-
     function reserveFactorKey(address market, bool isLong) internal pure returns (bytes32) {
         return keccak256(abi.encode(RESERVE_FACTOR, market, isLong));
     }

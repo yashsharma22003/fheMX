@@ -28,7 +28,6 @@ contract SealedStopLossDemoForkTest is SealedOrderAdapterTestBase {
         ethUsd = NetworkConfig.market(json, "ETH_USD");
 
         GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
-        GmxKeeperSimulator.disablePositionImpact(gmx, ethUsd.marketToken);
         UserAccount impl = new UserAccount(
             UserAccount.GmxContracts({
                 exchangeRouter: gmx.exchangeRouter,
@@ -40,7 +39,7 @@ contract SealedStopLossDemoForkTest is SealedOrderAdapterTestBase {
             }),
             feeCollector
         );
-        _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken);
+        _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken, gmx.reader, gmx.dataStore);
         _fund(alice.account(), 0.1 ether);
         account = adapter.accountOf(alice.account());
         _openLongViaSealedEntry();

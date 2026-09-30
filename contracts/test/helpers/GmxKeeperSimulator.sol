@@ -42,17 +42,6 @@ library GmxKeeperSimulator {
         vm.stopPrank();
     }
 
-    /// @notice Test fixture: turn off position price impact on the market, so fills happen at the oracle price.
-    /// @dev The Sepolia ETH/USD pool is heavily long-imbalanced; GMX holds a new long's negative price impact as
-    ///      pending and applies it on close, so on 2026-09-30 a $100 long closed ~15% below the oracle price.
-    ///      Tests that assert on slippage bounds use this to test our logic rather than testnet pool state.
-    function disablePositionImpact(NetworkConfig.Gmx memory gmx, address market) internal {
-        vm.startPrank(gmx.orderHandler);
-        IGmxDataStore(gmx.dataStore).setUint(GmxKeys.positionImpactFactorKey(market, true), 0);
-        IGmxDataStore(gmx.dataStore).setUint(GmxKeys.positionImpactFactorKey(market, false), 0);
-        vm.stopPrank();
-    }
-
     /// @dev GMX prices are USD per smallest token unit, scaled so that price * amount has 30 decimals.
     function usdPrice(uint256 usdWhole, uint8 tokenDecimals) internal pure returns (uint256) {
         return usdWhole * 10 ** (30 - tokenDecimals);

@@ -37,7 +37,13 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         uint32 slippage;
     }
 
-    function _deployAdapter(address accountImplementation, address wnt, address market) internal {
+    function _deployAdapter(
+        address accountImplementation,
+        address wnt,
+        address market,
+        address gmxReader,
+        address gmxDataStore
+    ) internal {
         _clearLiveCofheStorage();
         deployMocks();
         // The mock signers sign with cheatcodes; on a fork their addresses pre-exist, so allow them explicitly.
@@ -68,7 +74,9 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
                 priceVerifier: address(prices),
                 maxReportAge: MAX_REPORT_AGE,
                 minCheckInterval: MIN_CHECK_INTERVAL,
-                callbackGasLimit: CALLBACK_GAS_LIMIT
+                callbackGasLimit: CALLBACK_GAS_LIMIT,
+                gmxReader: gmxReader,
+                gmxDataStore: gmxDataStore
             })
         );
     }

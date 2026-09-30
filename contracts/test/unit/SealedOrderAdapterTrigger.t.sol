@@ -7,7 +7,7 @@ import {IUserAccount} from "../../src/account/IUserAccount.sol";
 import {UserAccount} from "../../src/account/UserAccount.sol";
 import {GmxRole} from "../../src/interfaces/gmx/IGmxRoleStore.sol";
 import {GmxEventUtils} from "../../src/interfaces/gmx/GmxTypes.sol";
-import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore} from "../helpers/GmxMocks.sol";
+import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore, MockGmxReader} from "../helpers/GmxMocks.sol";
 import {SealedOrderAdapterTestBase} from "../helpers/SealedOrderAdapterTestBase.sol";
 
 /// @notice Milestone 4: trigger check -> execute -> settle, on CoFHE and GMX mocks.
@@ -27,18 +27,19 @@ contract SealedOrderAdapterTriggerTest is SealedOrderAdapterTestBase {
         MockGmxRoleStore roleStore = new MockGmxRoleStore();
         roleStore.grant(gmxHandler, GmxRole.CONTROLLER);
         router = new MockGmxExchangeRouter();
+        MockGmxDataStore dataStore = new MockGmxDataStore();
         UserAccount impl = new UserAccount(
             UserAccount.GmxContracts({
                 exchangeRouter: address(router),
                 router: address(0x0B7),
                 orderVault: address(0x0FA),
-                dataStore: address(new MockGmxDataStore()),
+                dataStore: address(dataStore),
                 roleStore: address(roleStore),
                 wnt: WNT
             }),
             feeCollector
         );
-        _deployAdapter(address(impl), WNT, MARKET);
+        _deployAdapter(address(impl), WNT, MARKET, address(new MockGmxReader()), address(dataStore));
         _fund(alice.account(), 5 ether);
     }
 

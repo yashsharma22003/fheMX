@@ -5,11 +5,20 @@ import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {IUserAccount} from "../account/IUserAccount.sol";
 import {UserAccountFactory} from "../account/UserAccountFactory.sol";
 import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
+import {IGmxReader, GmxPricing} from "../interfaces/gmx/IGmxReader.sol";
+
+interface IGmxDataStoreRead {
+    function getUint(bytes32 key) external view returns (uint256);
+    function getInt(bytes32 key) external view returns (int256);
+}
 
 /// @notice Accepts sealed conditional orders for GMX V2 and fires them when their hidden trigger is crossed.
 /// @dev Order kinds: limit entry (increase, collateral WNT), stop-loss and take-profit (decrease an existing
 ///      position of the user's account). Increase orders are limited to markets whose index token is the
-///      collateral token (WNT), so one report prices both the trigger and the collateral (known issue 10).
+///      collateral token (WNT) and whose short token is a USD stablecoin (priced at $1), so one report prices
+///      the trigger, the collateral and GMX's execution-price estimate (known issue 10).
+///      Acceptable prices are anchored on GMX's own execution-price estimate at the check price (Reader), so a
+///      market's price impact doesn't make orders fail; the user's slippage bounds movement around that fill.
 ///      Encrypted fixed-point conventions:
 ///        size:          USD with 6 decimals (euint64)  -> GMX sizeDeltaUsd = size * 1e24
 ///        trigger price: USD with 8 decimals (euint64)
@@ -46,6 +55,8 @@ contract SealedOrderAdapter {
         uint32 maxReportAge;
         uint32 minCheckInterval;
         uint32 callbackGasLimit;
+        address gmxReader;
+        address gmxDataStore;
     }
 
     /// @dev `collateral` is posted collateral for a limit entry and must be 0 for stop-loss/take-profit.
@@ -114,6 +125,11 @@ contract SealedOrderAdapter {
     uint256 private constant PRICE8_TO_GMX = 1e4;
     /// @dev wei * price8 / 1e20 = USD with 6 decimals
     uint256 private constant WEI_PRICE8_TO_USD6 = 1e20;
+    /// @dev $1 per smallest unit of a 6-decimal stablecoin, in GMX's 30-decimal price format
+    uint256 private constant STABLE_PRICE_GMX = 1e24;
+    bytes32 private constant SIZE_IN_USD = keccak256(abi.encode("SIZE_IN_USD"));
+    bytes32 private constant SIZE_IN_TOKENS = keccak256(abi.encode("SIZE_IN_TOKENS"));
+    bytes32 private constant PENDING_IMPACT_AMOUNT = keccak256(abi.encode("PENDING_IMPACT_AMOUNT"));
 
     UserAccountFactory public immutable factory;
     address public immutable wnt;
@@ -129,6 +145,8 @@ contract SealedOrderAdapter {
     uint32 public immutable maxReportAge;
     uint32 public immutable minCheckInterval;
     uint32 public immutable callbackGasLimit;
+    IGmxReader public immutable gmxReader;
+    address public immutable gmxDataStore;
 
     mapping(address market => bool) public isSupportedMarket;
     mapping(bytes32 orderId => SealedOrder) private _orders;
@@ -194,6 +212,8 @@ contract SealedOrderAdapter {
         maxReportAge = cfg.maxReportAge;
         minCheckInterval = cfg.minCheckInterval;
         callbackGasLimit = cfg.callbackGasLimit;
+        gmxReader = IGmxReader(cfg.gmxReader);
+        gmxDataStore = cfg.gmxDataStore;
         for (uint256 i; i < cfg.markets.length; i++) {
             isSupportedMarket[cfg.markets[i]] = true;
         }
@@ -449,7 +469,8 @@ contract SealedOrderAdapter {
         }
 
         f.sizeDeltaUsd = sizeDeltaUsd;
-        f.acceptablePrice = _acceptablePrice(price8, slippage, f.isLong == increase);
+        uint256 expected = _expectedExecutionPrice(o, f.isLong, increase, sizeDeltaUsd, price8);
+        f.acceptablePrice = _withSlippage(expected, slippage, f.isLong == increase);
         f.protocolFee = increase ? uint256(f.size6) * increaseFeeBps / BPS * WEI_PRICE8_TO_USD6 / price8 : decreaseFeeFlat;
 
         gmxKey = IUserAccount(o.account).submit(
@@ -486,11 +507,60 @@ contract SealedOrderAdapter {
         return maxSize > type(uint64).max ? type(uint64).max : uint64(maxSize);
     }
 
-    /// @dev GMX acceptable price per wei (30 - 18 decimals). When buying (long increase, short decrease) it is
-    ///      the highest price accepted; when selling (short increase, long decrease) the lowest.
-    function _acceptablePrice(uint256 price8, uint32 slippage, bool buying) private pure returns (uint256) {
+    struct PositionState {
+        uint256 sizeInUsd;
+        uint256 sizeInTokens;
+        int256 pendingImpactAmount;
+    }
+
+    /// @dev GMX's own estimate of the execution price (per wei, 30 - 18 decimals) for this order at `price8`,
+    ///      including the market's price impact: the same calculation GMX validates `acceptablePrice` against.
+    function _expectedExecutionPrice(
+        SealedOrder storage o,
+        bool isLong,
+        bool increase,
+        uint256 sizeDeltaUsd,
+        uint256 price8
+    ) private view returns (uint256) {
+        PositionState memory pos = _positionState(o.account, o.market, o.collateralToken, isLong);
+        return gmxReader.getExecutionPrice(
+            gmxDataStore,
+            o.market,
+            _marketPrices(price8),
+            pos.sizeInUsd,
+            pos.sizeInTokens,
+            increase ? int256(sizeDeltaUsd) : -int256(sizeDeltaUsd),
+            pos.pendingImpactAmount,
+            isLong
+        ).executionPrice;
+    }
+
+    function _positionState(address account, address market, address collateralToken, bool isLong)
+        private
+        view
+        returns (PositionState memory pos)
+    {
+        bytes32 key = keccak256(abi.encode(account, market, collateralToken, isLong));
+        IGmxDataStoreRead ds = IGmxDataStoreRead(gmxDataStore);
+        pos.sizeInUsd = ds.getUint(keccak256(abi.encode(key, SIZE_IN_USD)));
+        pos.sizeInTokens = ds.getUint(keccak256(abi.encode(key, SIZE_IN_TOKENS)));
+        pos.pendingImpactAmount = ds.getInt(keccak256(abi.encode(key, PENDING_IMPACT_AMOUNT)));
+    }
+
+    /// @dev Index and long token are WNT at the report price; the short token is a USD stablecoin at $1.
+    function _marketPrices(uint256 price8) private pure returns (GmxPricing.MarketPrices memory) {
         uint256 p = price8 * PRICE8_TO_GMX;
-        return buying ? p * (BPS + slippage) / BPS : p * (BPS - slippage) / BPS;
+        return GmxPricing.MarketPrices({
+            indexTokenPrice: GmxPricing.Price(p, p),
+            longTokenPrice: GmxPricing.Price(p, p),
+            shortTokenPrice: GmxPricing.Price(STABLE_PRICE_GMX, STABLE_PRICE_GMX)
+        });
+    }
+
+    /// @dev When buying (long increase, short decrease) the acceptable price is the highest accepted;
+    ///      when selling (short increase, long decrease) the lowest.
+    function _withSlippage(uint256 price, uint32 slippage, bool buying) private pure returns (uint256) {
+        return buying ? price * (BPS + slippage) / BPS : price * (BPS - slippage) / BPS;
     }
 
     function _gmxCancelled(address account, bytes32 orderId) private view returns (bool) {

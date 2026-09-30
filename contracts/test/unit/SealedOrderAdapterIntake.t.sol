@@ -6,7 +6,7 @@ import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {SealedOrderAdapter} from "../../src/adapter/SealedOrderAdapter.sol";
 import {IUserAccount} from "../../src/account/IUserAccount.sol";
 import {UserAccount} from "../../src/account/UserAccount.sol";
-import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore} from "../helpers/GmxMocks.sol";
+import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore, MockGmxReader} from "../helpers/GmxMocks.sol";
 import {SealedOrderAdapterTestBase} from "../helpers/SealedOrderAdapterTestBase.sol";
 
 /// @notice Milestone 3: sealed intake on CoFHE mocks.
@@ -18,18 +18,19 @@ contract SealedOrderAdapterIntakeTest is SealedOrderAdapterTestBase {
     uint256 private constant EXEC_FEE = 0.001 ether;
 
     function setUp() public {
+        MockGmxDataStore dataStore = new MockGmxDataStore();
         UserAccount impl = new UserAccount(
             UserAccount.GmxContracts({
                 exchangeRouter: address(new MockGmxExchangeRouter()),
                 router: address(0x0B7),
                 orderVault: address(0x0FA),
-                dataStore: address(new MockGmxDataStore()),
+                dataStore: address(dataStore),
                 roleStore: address(new MockGmxRoleStore()),
                 wnt: WNT
             }),
             makeAddr("feeCollector")
         );
-        _deployAdapter(address(impl), WNT, MARKET);
+        _deployAdapter(address(impl), WNT, MARKET, address(new MockGmxReader()), address(dataStore));
         _fund(alice.account(), 5 ether);
         _fund(bob.account(), 5 ether);
     }

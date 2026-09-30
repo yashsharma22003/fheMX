@@ -105,9 +105,13 @@ Markets: WETH/WETH-USDC.SG, BTC/BTC-USDC.SG, CRV/WETH-USDC.SG. No Sepolia token 
 `contracts/test/fork/SealedStopLossDemo.t.sol`, 2026-09-30:
 
 - A `MarketDecrease` with `initialCollateralDeltaAmount = 0` closing the full size returns the collateral as native ETH; a long close with `acceptablePrice` above the execution price is cancelled with `OrderNotFulfillableAtAcceptablePrice(executionPrice, acceptablePrice)`.
-- **Pending price impact:** at `bf30ebb`, an increase's price impact is held as pending on the position and applied on close. On the long-imbalanced Sepolia ETH/USD pool, a $100 long closed at $1,937 against a $2,290 oracle price. Decrease slippage bounds must account for it (known issue 14).
+- **Price impact in the execution price:** GMX validates `acceptablePrice` against an execution price that includes the trade's *own* price impact (`PositionUtils.getExecutionPriceForDecrease` / `…ForIncrease`). The position's pending impact from opening is settled separately in USD and does not move that price. On 2026-09-30 the Sepolia ETH/USD pool was short-heavy, so closing a $100 long (worsening the balance) was priced at $1,937 against a $2,290 oracle price. The adapter anchors `acceptablePrice` on `Reader.getExecutionPrice` for this reason (known issue 14).
 - **Reserve cap:** on 2026-09-30 the ETH/USD long side was at its open-interest reserve cap (`InsufficientReserveForOpenInterest`), so no new long could open. Market keys (all 30-decimal factors): `RESERVE_FACTOR` 2.75e30, `OPEN_INTEREST_RESERVE_FACTOR` 2.7e30, `MAX_OPEN_INTEREST` $70M per side, `POSITION_IMPACT_FACTOR` 4.5e23 (positive) / 5e23 (negative), exponent 2.
-- Test fixtures in `GmxKeeperSimulator`: `ensureOpenInterestCapacity` and `disablePositionImpact` set these DataStore keys as a CONTROLLER.
+- Test fixture in `GmxKeeperSimulator`: `ensureOpenInterestCapacity` raises the reserve factors as a CONTROLLER.
+
+## Execution-price estimate
+
+`Reader.getExecutionPrice(dataStore, market, prices, positionSizeInUsd, positionSizeInTokens, sizeDeltaUsd, pendingImpactAmount, isLong)` (vendored as `IGmxReader`) returns `ExecutionPriceResult.executionPrice` in GMX's per-unit 30-decimal format. `sizeDeltaUsd` is positive for an increase, negative for a decrease. Position fields come from DataStore keys `keccak256(abi.encode(positionKey, SIZE_IN_USD | SIZE_IN_TOKENS | PENDING_IMPACT_AMOUNT))` (the last is an int). The Reader is redeployed with GMX; its address is in `config/networks/arbitrum-sepolia.json`.
 
 ## Keeper simulator (tests only)
 

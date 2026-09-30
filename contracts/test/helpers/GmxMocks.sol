@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IGmxExchangeRouter} from "../../src/interfaces/gmx/IGmxExchangeRouter.sol";
+import {IGmxReader, GmxPricing} from "../../src/interfaces/gmx/IGmxReader.sol";
 
 contract MockERC20 is ERC20 {
     uint8 private immutable _decimals;
@@ -57,8 +58,32 @@ contract MockGmxExchangeRouter {
     }
 }
 
+/// @notice Returns the index price as the execution price (no price impact) unless a fill price is forced.
+contract MockGmxReader is IGmxReader {
+    uint256 public forcedExecutionPrice;
+    int256 public lastSizeDeltaUsd;
+
+    function forceExecutionPrice(uint256 price) external {
+        forcedExecutionPrice = price;
+    }
+
+    function getExecutionPrice(
+        address,
+        address,
+        GmxPricing.MarketPrices memory prices,
+        uint256,
+        uint256,
+        int256,
+        int256,
+        bool
+    ) external view returns (GmxPricing.ExecutionPriceResult memory result) {
+        result.executionPrice = forcedExecutionPrice != 0 ? forcedExecutionPrice : prices.indexTokenPrice.min;
+    }
+}
+
 contract MockGmxDataStore {
     mapping(bytes32 => uint256) public getUint;
+    mapping(bytes32 => int256) public getInt;
     mapping(bytes32 => mapping(bytes32 => bool)) public containsBytes32;
 
     function setUint(bytes32 key, uint256 value) external {

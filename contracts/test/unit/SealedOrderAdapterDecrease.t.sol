@@ -7,7 +7,7 @@ import {IUserAccount} from "../../src/account/IUserAccount.sol";
 import {UserAccount} from "../../src/account/UserAccount.sol";
 import {GmxRole} from "../../src/interfaces/gmx/IGmxRoleStore.sol";
 import {GmxEventUtils} from "../../src/interfaces/gmx/GmxTypes.sol";
-import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore} from "../helpers/GmxMocks.sol";
+import {MockGmxRoleStore, MockGmxExchangeRouter, MockGmxDataStore, MockGmxReader} from "../helpers/GmxMocks.sol";
 import {SealedOrderAdapterTestBase} from "../helpers/SealedOrderAdapterTestBase.sol";
 
 /// @notice Milestone 7: stop-loss / take-profit and the D4 re-arm, on CoFHE and GMX mocks.
@@ -20,6 +20,7 @@ contract SealedOrderAdapterDecreaseTest is SealedOrderAdapterTestBase {
 
     MockGmxExchangeRouter private router;
     MockGmxDataStore private dataStore;
+    MockGmxReader private reader;
     address private gmxHandler = makeAddr("gmxHandler");
     address private feeCollector = makeAddr("feeCollector");
     GmxEventUtils.EventLogData private emptyLog;
@@ -41,7 +42,8 @@ contract SealedOrderAdapterDecreaseTest is SealedOrderAdapterTestBase {
             }),
             feeCollector
         );
-        _deployAdapter(address(impl), WNT, MARKET);
+        reader = new MockGmxReader();
+        _deployAdapter(address(impl), WNT, MARKET, address(reader), address(dataStore));
         _fund(alice.account(), 1 ether);
     }
 
@@ -163,6 +165,15 @@ contract SealedOrderAdapterDecreaseTest is SealedOrderAdapterTestBase {
         assertEq(f.acceptablePrice, 2_300e8 * 1e4 * 9_950 / 10_000, "long close accepts 0.5% below");
         assertEq(f.protocolFee, DECREASE_FEE_FLAT);
         assertEq(router.lastValue(), EXEC_FEE, "no collateral travels on a decrease");
+    }
+
+    /// Known issue 14: slippage applies around GMX's expected fill, so a market's price impact doesn't fail the stop.
+    function test_execute_acceptablePriceAnchoredOnGmxExecutionEstimate() public {
+        _setPosition(true, POSITION);
+        reader.forceExecutionPrice(1_940e8 * 1e4); // GMX expects the close to fill ~15% under the oracle
+        bytes32 id = _stopLossLong(2_300e8);
+        _fireAndExecute(id, 2_300e8);
+        assertEq(adapter.fillOf(id).acceptablePrice, 1_940e8 * 1e4 * 9_950 / 10_000, "0.5% below GMX's expected fill");
     }
 
     function test_execute_shortClose_buysWithSlippageAbove() public {
