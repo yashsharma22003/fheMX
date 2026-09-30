@@ -30,7 +30,15 @@ contract SealedLimitEntryDemoForkTest is SealedOrderAdapterTestBase {
         GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
         UserAccount impl =
             new UserAccount(_gmxContracts(), feeCollector);
-        _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken, gmx.reader, gmx.dataStore);
+        _deployAdapterFor(
+            address(impl),
+            gmx.wnt,
+            _market(ethUsd.marketToken, ethUsd.indexToken, ethUsd.longToken, ethUsd.shortToken),
+            gmx.reader,
+            gmx.dataStore,
+            address(0),
+            MAX_REPORT_AGE
+        );
         _fund(alice.account(), 0.1 ether);
     }
 

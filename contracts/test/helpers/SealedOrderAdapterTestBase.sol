@@ -7,6 +7,7 @@ import "@fhenixprotocol/cofhe-contracts/FHE.sol";
 import {SealedOrderAdapter} from "../../src/adapter/SealedOrderAdapter.sol";
 import {MockPriceVerifier} from "./MockPriceVerifier.sol";
 import {BatchCofheClient} from "./BatchCofheClient.sol";
+import {MockERC20} from "./GmxMocks.sol";
 
 /// @notice Shared deployment and input helpers for adapter tests (unit and fork).
 abstract contract SealedOrderAdapterTestBase is CofheTest {
@@ -27,6 +28,8 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
 
     SealedOrderAdapter internal adapter;
     address internal wntToken;
+    /// @dev short token of the default test market; a 6-decimal mock in unit tests, USDC.SG on forks
+    address internal shortToken;
     MockPriceVerifier internal prices;
     BatchCofheClient internal alice;
     BatchCofheClient internal bob;
@@ -38,6 +41,8 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         uint32 slippage;
     }
 
+    /// @notice Unit-test deployment: one market with WNT as index and long token and a fresh 6-decimal mock USDC
+    ///         (priced at $1) as short token, priced by the mock verifier.
     function _deployAdapter(
         address accountImplementation,
         address wnt,
@@ -45,14 +50,26 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         address gmxReader,
         address gmxDataStore
     ) internal {
-        _deployAdapterWithVerifier(accountImplementation, wnt, market, gmxReader, gmxDataStore, address(0), MAX_REPORT_AGE);
+        address usdc = address(new MockERC20("USDC", 6));
+        _deployAdapterFor(
+            accountImplementation, wnt, _market(market, wnt, wnt, usdc), gmxReader, gmxDataStore, address(0), MAX_REPORT_AGE
+        );
     }
 
-    /// @param priceVerifier address(0) deploys the mock verifier
-    function _deployAdapterWithVerifier(
+    function _market(address market, address index, address long, address short)
+        internal
+        pure
+        returns (SealedOrderAdapter.MarketConfig[] memory markets)
+    {
+        markets = new SealedOrderAdapter.MarketConfig[](1);
+        markets[0] = SealedOrderAdapter.MarketConfig(market, index, long, short);
+    }
+
+    /// @param priceVerifier address(0) deploys the mock verifier (short token of the first market priced at $1)
+    function _deployAdapterFor(
         address accountImplementation,
         address wnt,
-        address market,
+        SealedOrderAdapter.MarketConfig[] memory markets,
         address gmxReader,
         address gmxDataStore,
         address priceVerifier,
@@ -68,11 +85,11 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         bob = new BatchCofheClient();
         bob.connect(BOB_PKEY);
         prices = new MockPriceVerifier();
-        if (priceVerifier == address(0)) priceVerifier = address(prices);
         wntToken = wnt;
+        shortToken = markets[0].shortToken;
+        prices.setPrice(shortToken, 1e8);
+        if (priceVerifier == address(0)) priceVerifier = address(prices);
 
-        address[] memory markets = new address[](1);
-        markets[0] = market;
         adapter = new SealedOrderAdapter(
             SealedOrderAdapter.Config({
                 accountImplementation: accountImplementation,

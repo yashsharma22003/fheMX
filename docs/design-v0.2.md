@@ -8,6 +8,8 @@ v0.2 keeps the v0.1 architecture but corrects six design-changing assumptions ab
 
 *Open items deferred to implementation are tracked in [KNOWN_ISSUES.md](KNOWN_ISSUES.md).*
 
+*Update 2026-09-30: any configured GMX market; collateral is the market's long or short token; each token is priced by its own feed (see decisions.md, known issue 10).*
+
 *Update 2026-09-30 (D7): trigger checks are priced by free Chainlink Data Feeds, not Data Streams. Where this document says "Data Streams report", read "the feed's latest answer"; the report-age and newer-report rules apply to the feed's update time. See [integration/chainlink-data-feeds.md](integration/chainlink-data-feeds.md) and [decisions.md](decisions.md).*
 
 ---

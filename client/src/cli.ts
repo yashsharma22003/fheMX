@@ -6,11 +6,13 @@
 //   pnpm -F client cli fund 0.05
 //   pnpm -F client cli order --kind limit --side long --size 100 --trigger 2400 --slippage 100 --collateral 0.02
 //   pnpm -F client cli order --kind stop  --side long --size 100 --trigger 2300 --slippage 100
+//   pnpm -F client cli fund-token USDC_SG 50
+//   pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
 //   pnpm -F client cli status 1
 //   pnpm -F client cli cancel 1
 //   pnpm -F client cli withdraw 0.01
 import { parseArgs } from "node:util";
-import { formatEther, parseEther, toHex, pad, type Hex } from "viem";
+import { erc20Abi, formatEther, formatUnits, parseEther, parseUnits, toHex, pad, type Address, type Hex } from "viem";
 import { Encryptable } from "@cofhe/sdk";
 import {
   sealedOrderAdapterAbi,
@@ -32,7 +34,13 @@ const network = loadNetwork();
 const c = clients("PRIVATE_KEY");
 const adapter = { address: deployment.adapter, abi: sealedOrderAdapterAbi } as const;
 const wnt = network.gmx.wnt;
-const market = network.markets.ETH_USD.marketToken;
+
+/** Token by config name (WETH, BTC, USDC_SG); WETH is held as native ETH by the account. */
+function token(name: string): { address: Address; decimals: number; native: boolean } {
+  const t = (network as unknown as { tokens: Record<string, { address: Address; decimals: number }> }).tokens[name];
+  if (!t) throw new Error(`unknown token ${name}; one of ${Object.keys((network as any).tokens).join(", ")}`);
+  return { ...t, native: t.address.toLowerCase() === wnt.toLowerCase() };
+}
 
 async function accountAddress() {
   return c.publicClient.readContract({ ...adapter, functionName: "accountOf", args: [c.account.address] });
@@ -58,6 +66,11 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
       const free = await c.publicClient.readContract({ address: account, abi: userAccountAbi, functionName: "freeBalance", args: [wnt] });
       console.log(`free     ${formatEther(free)} ETH (the rest is locked by open orders)`);
     }
+    for (const name of ["USDC_SG", "BTC"]) {
+      const t = token(name);
+      const bal = await c.publicClient.readContract({ address: t.address, abi: erc20Abi, functionName: "balanceOf", args: [account] });
+      if (bal > 0n) console.log(`${name.padEnd(8)} ${formatUnits(bal, t.decimals)}`);
+    }
   },
 
   async fund([amount]) {
@@ -65,11 +78,24 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     await wait("fund", hash);
   },
 
+  async ["fund-token"]([name, amount]) {
+    const t = token(name ?? "");
+    const hash = await c.walletClient.writeContract({
+      address: t.address,
+      abi: erc20Abi,
+      functionName: "transfer",
+      args: [await accountAddress(), parseUnits(amount ?? "0", t.decimals)],
+    });
+    await wait(`fund ${name}`, hash);
+  },
+
   async order(argv) {
     const { values } = parseArgs({
       args: argv,
       options: {
         kind: { type: "string", default: "limit" },
+        market: { type: "string", default: "ETH_USD" },
+        "collateral-token": { type: "string", default: "WETH" },
         side: { type: "string", default: "long" },
         size: { type: "string" },
         trigger: { type: "string" },
@@ -80,6 +106,9 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
       },
     });
     const kind = { limit: OrderKind.LimitIncrease, stop: OrderKind.StopLoss, tp: OrderKind.TakeProfit }[values.kind!];
+    const marketCfg = network.markets[values.market!];
+    if (!marketCfg) throw new Error(`unknown market ${values.market}; one of ${Object.keys(network.markets).join(", ")}`);
+    const collateralToken = token(values["collateral-token"]!);
     if (kind === undefined) throw new Error("--kind must be limit, stop or tp");
     if (!values.size || !values.trigger) throw new Error("--size (USD) and --trigger (USD) are required");
 
@@ -100,10 +129,10 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
       functionName: "submitOrder",
       args: [
         {
-          market,
+          market: marketCfg.marketToken,
           kind,
-          collateralToken: wnt,
-          collateral: kind === OrderKind.LimitIncrease ? parseEther(values.collateral!) : 0n,
+          collateralToken: collateralToken.address,
+          collateral: kind === OrderKind.LimitIncrease ? parseUnits(values.collateral!, collateralToken.decimals) : 0n,
           executionFee: parseEther(values.fee!),
           fallbackSlippageBps: Number(values.fallback),
           isLong,

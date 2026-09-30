@@ -21,8 +21,30 @@ export const sealedOrderAdapterAbi = [
           },
           {
             "name": "markets",
-            "type": "address[]",
-            "internalType": "address[]"
+            "type": "tuple[]",
+            "internalType": "struct SealedOrderAdapter.MarketConfig[]",
+            "components": [
+              {
+                "name": "market",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "indexToken",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "longToken",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "shortToken",
+                "type": "address",
+                "internalType": "address"
+              }
+            ]
           },
           {
             "name": "minSizeUsd6",
@@ -208,6 +230,11 @@ export const sealedOrderAdapterAbi = [
           },
           {
             "name": "checkPrice8",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "collateralPrice8",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -421,6 +448,57 @@ export const sealedOrderAdapterAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "marketOf",
+    "inputs": [
+      {
+        "name": "market",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct SealedOrderAdapter.MarketInfo",
+        "components": [
+          {
+            "name": "indexToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "longToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "shortToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "indexDecimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "longDecimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "shortDecimals",
+            "type": "uint8",
+            "internalType": "uint8"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -1182,6 +1260,22 @@ export const sealedOrderAdapterAbi = [
         "name": "token",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedDecimals",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "decimals",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },
@@ -4406,7 +4500,7 @@ export const chainlinkFeedPriceVerifierAbi = [
     "type": "constructor",
     "inputs": [
       {
-        "name": "markets",
+        "name": "tokens",
         "type": "address[]",
         "internalType": "address[]"
       },
@@ -4414,6 +4508,11 @@ export const chainlinkFeedPriceVerifierAbi = [
         "name": "feeds",
         "type": "address[]",
         "internalType": "address[]"
+      },
+      {
+        "name": "maxAges",
+        "type": "uint32[]",
+        "internalType": "uint32[]"
       },
       {
         "name": "sequencerUptimeFeed_",
@@ -4433,16 +4532,50 @@ export const chainlinkFeedPriceVerifierAbi = [
     "name": "feedOf",
     "inputs": [
       {
-        "name": "market",
+        "name": "token",
         "type": "address",
         "internalType": "address"
       }
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "feed",
         "type": "address",
-        "internalType": "contract IAggregatorV3"
+        "internalType": "address"
+      },
+      {
+        "name": "maxAge",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "price",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "price8",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -4474,40 +4607,11 @@ export const chainlinkFeedPriceVerifierAbi = [
     "stateMutability": "view"
   },
   {
-    "type": "function",
-    "name": "verify",
-    "inputs": [
-      {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "",
-        "type": "bytes",
-        "internalType": "bytes"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "price8",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "timestamp",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
     "type": "error",
     "name": "InvalidPrice",
     "inputs": [
       {
-        "name": "market",
+        "name": "token",
         "type": "address",
         "internalType": "address"
       },
@@ -4541,10 +4645,31 @@ export const chainlinkFeedPriceVerifierAbi = [
   },
   {
     "type": "error",
-    "name": "UnsupportedMarket",
+    "name": "StalePrice",
     "inputs": [
       {
-        "name": "market",
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "updatedAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "maxAge",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedToken",
+    "inputs": [
+      {
+        "name": "token",
         "type": "address",
         "internalType": "address"
       }

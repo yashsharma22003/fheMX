@@ -67,6 +67,14 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - **Rehearsed on a local anvil fork of Sepolia:** deploy succeeded; the client encrypted an order with the real CoFHE SDK and Fhenix's live verifier, and the adapter accepted the proof against the real TaskManager. `submitOrder` used 1,155,323 gas; one-order `checkBatch` 742,959 gas. Decryption can't run on a local fork (`not_publicly_allowed`: Fhenix's service checks the live chain) and waits for the live deployment.
 - **Live run 2026-09-30:** deployed to Arbitrum Sepolia; a sealed short limit entry fired, filled on GMX and settled; a sealed stop-loss closed it; a non-firing order was checked three times and cancelled. Real CoFHE decryption 0.64–0.98 s per value; full numbers in [live-run-2026-09-30.md](live-run-2026-09-30.md).
 
+## Done: more markets (known issue 10)
+
+- `SealedOrderAdapter` takes per-market configs (index, long, short tokens); collateral is any pool token; prices per token via `IPriceVerifier.price(token, report)`; leverage, fees and GMX's estimate use the right token's price and decimals.
+- `ChainlinkFeedPriceVerifier` is token-based with a max age per token (USDC's feed updates daily).
+- Deploy config: ETH/USD and BTC/USD markets; WETH, BTC and USDC.SG feeds. Checker and client updated (`--market`, `--collateral-token`, `fund-token`).
+- Tests: 10 multi-market unit tests; fork demo: a sealed BTC long with USDC collateral fires on the real BTC feed, fills on live GMX and pays its fee in USDC.
+- The live deployment from the first run is the pre-multi-market version; a redeploy is needed to use this live.
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -88,7 +96,6 @@ First demo scope: limit entries only; stop-loss and take-profit arrive in milest
 
 1. Per-check fee (known issue 11), sized from the live numbers.
 2. Checker hardening (known issues 16, 17): own key, retry executes, batch reads, parallel decrypts, persisted cursor.
-3. More markets (known issue 10: second price for non-ETH collateral).
 4. Mainnet readiness: parameters, sequencer-uptime feed, audit.
 
 ## Working rules

@@ -29,16 +29,10 @@ contract Deploy is Script {
         address deployer = vm.addr(key);
         address feeCollector = vm.envOr("FEE_COLLECTOR", deployer);
 
-        address market = vm.parseJsonAddress(json, ".markets.ETH_USD.marketToken");
-        address[] memory markets = new address[](1);
-        address[] memory feeds = new address[](1);
-        markets[0] = market;
-        feeds[0] = vm.parseJsonAddress(json, ".chainlinkFeeds.ETH_USD");
-
         vm.startBroadcast(key);
         d.accountImplementation = address(new UserAccount(_gmx(json), feeCollector));
-        d.priceVerifier = address(new ChainlinkFeedPriceVerifier(markets, feeds, address(0), 0));
-        SealedOrderAdapter adapter = new SealedOrderAdapter(_config(json, d, markets));
+        d.priceVerifier = _deployVerifier(json);
+        SealedOrderAdapter adapter = new SealedOrderAdapter(_config(json, d, _markets(json)));
         vm.stopBroadcast();
 
         d.adapter = address(adapter);
@@ -54,6 +48,44 @@ contract Deploy is Script {
         return vm.parseUint(prefixed ? raw : string.concat("0x", raw));
     }
 
+    /// @dev One feed per token from `adapter.priceFeeds`, each with its own max age.
+    function _deployVerifier(string memory json) private returns (address) {
+        uint256 n = _count(json, ".adapter.priceFeeds");
+        address[] memory tokens = new address[](n);
+        address[] memory feeds = new address[](n);
+        uint32[] memory maxAges = new uint32[](n);
+        for (uint256 i; i < n; i++) {
+            string memory base = string.concat(".adapter.priceFeeds[", vm.toString(i), "]");
+            tokens[i] = vm.parseJsonAddress(
+                json, string.concat(".tokens.", vm.parseJsonString(json, string.concat(base, ".token")), ".address")
+            );
+            feeds[i] = vm.parseJsonAddress(
+                json, string.concat(".chainlinkFeeds.", vm.parseJsonString(json, string.concat(base, ".feed")))
+            );
+            maxAges[i] = uint32(vm.parseJsonUint(json, string.concat(base, ".maxAgeSeconds")));
+        }
+        return address(new ChainlinkFeedPriceVerifier(tokens, feeds, maxAges, address(0), 0));
+    }
+
+    function _markets(string memory json) private pure returns (SealedOrderAdapter.MarketConfig[] memory markets) {
+        string[] memory names = vm.parseJsonStringArray(json, ".adapter.markets");
+        markets = new SealedOrderAdapter.MarketConfig[](names.length);
+        for (uint256 i; i < names.length; i++) {
+            string memory base = string.concat(".markets.", names[i]);
+            markets[i] = SealedOrderAdapter.MarketConfig({
+                market: vm.parseJsonAddress(json, string.concat(base, ".marketToken")),
+                indexToken: vm.parseJsonAddress(json, string.concat(base, ".indexToken")),
+                longToken: vm.parseJsonAddress(json, string.concat(base, ".longToken")),
+                shortToken: vm.parseJsonAddress(json, string.concat(base, ".shortToken"))
+            });
+        }
+    }
+
+    /// @dev Length of a JSON array of objects (forge has no direct length cheatcode for them).
+    function _count(string memory json, string memory path) private view returns (uint256 n) {
+        while (vm.keyExistsJson(json, string.concat(path, "[", vm.toString(n), "]"))) n++;
+    }
+
     function _gmx(string memory json) private pure returns (UserAccount.GmxContracts memory) {
         return UserAccount.GmxContracts({
             exchangeRouter: vm.parseJsonAddress(json, ".gmx.exchangeRouter"),
@@ -65,7 +97,7 @@ contract Deploy is Script {
         });
     }
 
-    function _config(string memory json, Deployed memory d, address[] memory markets)
+    function _config(string memory json, Deployed memory d, SealedOrderAdapter.MarketConfig[] memory markets)
         private
         pure
         returns (SealedOrderAdapter.Config memory)

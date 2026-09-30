@@ -173,12 +173,12 @@ contract SealedOrderAdapterTriggerTest is SealedOrderAdapterTestBase {
         adapter.checkBatch(MARKET, ids, report);
     }
 
-    function test_check_rejectsWrongMarket() public {
+    function test_check_rejectsUnconfiguredMarket() public {
         bytes32 id = _longAt(2_400e8);
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = id;
         bytes memory report = prices.report(2_400e8, block.timestamp);
-        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.WrongMarket.selector, id, address(0xB7C)));
+        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.UnsupportedMarket.selector, address(0xB7C)));
         adapter.checkBatch(address(0xB7C), ids, report);
     }
 

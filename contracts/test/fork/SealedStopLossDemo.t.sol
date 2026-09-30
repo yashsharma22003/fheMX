@@ -39,7 +39,15 @@ contract SealedStopLossDemoForkTest is SealedOrderAdapterTestBase {
             }),
             feeCollector
         );
-        _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken, gmx.reader, gmx.dataStore);
+        _deployAdapterFor(
+            address(impl),
+            gmx.wnt,
+            _market(ethUsd.marketToken, ethUsd.indexToken, ethUsd.longToken, ethUsd.shortToken),
+            gmx.reader,
+            gmx.dataStore,
+            address(0),
+            MAX_REPORT_AGE
+        );
         _fund(alice.account(), 0.1 ether);
         account = adapter.accountOf(alice.account());
         _openLongViaSealedEntry();

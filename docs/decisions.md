@@ -56,6 +56,10 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-30 | — | Intake takes one CoFHE proof for all four encrypted fields, verified with `Impl.verifyBatchInputs` (mixed types: bool, uint64, uint64, uint32). | `@cofhe/sdk` `encryptInputs` returns one batch proof; one ZK proof per order instead of four for users, and one verification on-chain. Replay protection is unchanged (proof bound to sender and adapter). | Milestone 3: one proof per field. |
 | 2026-09-30 | — | TypeScript split into `shared/` (config, clients, ABIs generated from Foundry output), `checker/` and `client/`. | One layer per folder; ABIs can't drift from the contracts. | — |
 
+| 2026-09-30 | — | Multi-market (known issue 10): each market is configured with index, long and short tokens (decimals read at deployment); collateral must be the market's long or short token; `IPriceVerifier.price(token, report)` prices tokens, not markets; the trigger uses the index price, leverage and fee use the collateral price, GMX's estimate gets all three. | GMX only accepts pool tokens as collateral (WETH can't back a BTC/USD position without a swap); stablecoins and volatile tokens need their own prices and decimals. | Single ETH/USD market with WNT collateral and a $1 short-token assumption. |
+| 2026-09-30 | — | Each token's feed has its own max age in the verifier (Sepolia: ETH and BTC 300 s, USDC 25 h); the adapter keeps its stricter trigger-age rule for the index price. | Chainlink stablecoin feeds update on a 24 h heartbeat; one global age would block every check or accept stale volatile prices. | One max age for everything. |
+| 2026-09-30 | — | A limit entry's protocol fee is charged in its collateral token, converted at the collateral price recorded by the fired check. | The fee comes out of the reserve the user already locked in that token. | Fee always in ETH. |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

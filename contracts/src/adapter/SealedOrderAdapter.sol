@@ -7,6 +7,7 @@ import {IUserAccount} from "../account/IUserAccount.sol";
 import {UserAccountFactory} from "../account/UserAccountFactory.sol";
 import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
 import {IGmxReader, GmxPricing} from "../interfaces/gmx/IGmxReader.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 interface IGmxDataStoreRead {
     function getUint(bytes32 key) external view returns (uint256);
@@ -14,10 +15,10 @@ interface IGmxDataStoreRead {
 }
 
 /// @notice Accepts sealed conditional orders for GMX V2 and fires them when their hidden trigger is crossed.
-/// @dev Order kinds: limit entry (increase, collateral WNT), stop-loss and take-profit (decrease an existing
-///      position of the user's account). Increase orders are limited to markets whose index token is the
-///      collateral token (WNT) and whose short token is a USD stablecoin (priced at $1), so one report prices
-///      the trigger, the collateral and GMX's execution-price estimate (known issue 10).
+/// @dev Order kinds: limit entry (increase), stop-loss and take-profit (decrease an existing position of the
+///      user's account). Any configured market; collateral is the market's long or short token (GMX pool tokens).
+///      The index price decides triggers; the collateral price bounds leverage and converts the fee; long and
+///      short token prices feed GMX's execution-price estimate. All come from `priceVerifier`.
 ///      Acceptable prices are anchored on GMX's own execution-price estimate at the check price (Reader), so a
 ///      market's price impact doesn't make orders fail; the user's slippage bounds movement around that fill.
 ///      Encrypted fixed-point conventions:
@@ -40,10 +41,27 @@ contract SealedOrderAdapter {
         Filled
     }
 
+    /// @dev A GMX market as configured at deployment. Token decimals are read once, at construction.
+    struct MarketConfig {
+        address market;
+        address indexToken;
+        address longToken;
+        address shortToken;
+    }
+
+    struct MarketInfo {
+        address indexToken;
+        address longToken;
+        address shortToken;
+        uint8 indexDecimals;
+        uint8 longDecimals;
+        uint8 shortDecimals;
+    }
+
     struct Config {
         address accountImplementation;
         address wnt;
-        address[] markets;
+        MarketConfig[] markets;
         uint64 minSizeUsd6;
         uint64 maxSizeUsd6;
         uint32 maxSlippageBps;
@@ -100,6 +118,8 @@ contract SealedOrderAdapter {
         uint64 lastCheckAt;
         uint64 lastReportTimestamp;
         uint256 checkPrice8;
+        /// @dev collateral-token price at the check (limit entries): bounds leverage, converts the fee
+        uint256 collateralPrice8;
         euint64 revealedSize;
         ebool revealedIsLong;
         euint32 revealedSlippage;
@@ -121,12 +141,6 @@ contract SealedOrderAdapter {
     uint256 private constant BPS = 10_000;
     /// @dev size (USD, 6 decimals) -> GMX sizeDeltaUsd (30 decimals)
     uint256 private constant SIZE_TO_GMX = 1e24;
-    /// @dev price8 (USD per whole WNT, 8 decimals) -> GMX price per wei (30 - 18 = 12 decimals)
-    uint256 private constant PRICE8_TO_GMX = 1e4;
-    /// @dev wei * price8 / 1e20 = USD with 6 decimals
-    uint256 private constant WEI_PRICE8_TO_USD6 = 1e20;
-    /// @dev $1 per smallest unit of a 6-decimal stablecoin, in GMX's 30-decimal price format
-    uint256 private constant STABLE_PRICE_GMX = 1e24;
     bytes32 private constant SIZE_IN_USD = keccak256(abi.encode("SIZE_IN_USD"));
     bytes32 private constant SIZE_IN_TOKENS = keccak256(abi.encode("SIZE_IN_TOKENS"));
     bytes32 private constant PENDING_IMPACT_AMOUNT = keccak256(abi.encode("PENDING_IMPACT_AMOUNT"));
@@ -148,7 +162,7 @@ contract SealedOrderAdapter {
     IGmxReader public immutable gmxReader;
     address public immutable gmxDataStore;
 
-    mapping(address market => bool) public isSupportedMarket;
+    mapping(address market => MarketInfo) private _markets;
     mapping(bytes32 orderId => SealedOrder) private _orders;
     mapping(bytes32 orderId => CheckState) private _checks;
     mapping(bytes32 orderId => Fill) private _fills;
@@ -192,6 +206,7 @@ contract SealedOrderAdapter {
     error ExceedsIndependentCaps(bytes32 orderId);
     error NotFilled(bytes32 orderId);
     error NotRearmable(bytes32 orderId);
+    error UnsupportedDecimals(address token, uint8 decimals);
 
     constructor(Config memory cfg) {
         if (cfg.minSizeUsd6 == 0 || cfg.minSizeUsd6 > cfg.maxSizeUsd6 || cfg.maxLeverage == 0) revert InvalidConfig();
@@ -215,7 +230,15 @@ contract SealedOrderAdapter {
         gmxReader = IGmxReader(cfg.gmxReader);
         gmxDataStore = cfg.gmxDataStore;
         for (uint256 i; i < cfg.markets.length; i++) {
-            isSupportedMarket[cfg.markets[i]] = true;
+            MarketConfig memory m = cfg.markets[i];
+            _markets[m.market] = MarketInfo({
+                indexToken: m.indexToken,
+                longToken: m.longToken,
+                shortToken: m.shortToken,
+                indexDecimals: _decimals(m.indexToken),
+                longDecimals: _decimals(m.longToken),
+                shortDecimals: _decimals(m.shortToken)
+            });
         }
     }
 
@@ -225,11 +248,14 @@ contract SealedOrderAdapter {
     ///         Funds must already sit in msg.sender's account (its address is `factory.accountOf(msg.sender)`,
     ///         fundable before it exists); the account is created on first use.
     function submitOrder(SealedOrderInput calldata input) external returns (bytes32 orderId) {
-        if (!isSupportedMarket[input.market]) revert UnsupportedMarket(input.market);
+        MarketInfo memory m = _markets[input.market];
+        if (m.indexToken == address(0)) revert UnsupportedMarket(input.market);
+        if (input.collateralToken != m.longToken && input.collateralToken != m.shortToken) {
+            revert UnsupportedCollateral(input.collateralToken);
+        }
         bool increase = input.kind == OrderKind.LimitIncrease;
         if (increase) {
             if (input.collateral == 0) revert ZeroCollateral();
-            if (input.collateralToken != wnt) revert UnsupportedCollateral(input.collateralToken);
         } else if (input.collateral != 0) {
             revert DecreaseTakesNoCollateral();
         }
@@ -261,10 +287,16 @@ contract SealedOrderAdapter {
         _grant(o.slippageBps, msg.sender);
         _grant(o.intakeValid, msg.sender);
 
-        // Decrease orders lock no collateral; their fee reserve is the flat decrease fee, in ETH.
+        // A limit entry locks its collateral and fee reserve in the collateral token. Decrease orders lock no
+        // collateral; their fee reserve is the flat decrease fee, in ETH. Execution fees are always ETH.
         uint256 protocolFeeReserve = increase ? maxProtocolFee(input.collateral) : decreaseFeeFlat;
         IUserAccount(account).lock(
-            orderId, wnt, input.collateral, input.executionFee, EXECUTION_ATTEMPTS, protocolFeeReserve
+            orderId,
+            increase ? input.collateralToken : wnt,
+            input.collateral,
+            input.executionFee,
+            EXECUTION_ATTEMPTS,
+            protocolFeeReserve
         );
 
         emit OrderSealed(
@@ -306,18 +338,28 @@ contract SealedOrderAdapter {
     ///      AND (for a limit entry) size within max leverage of the collateral at this price. Size, side and
     ///      slippage are then made publicly decryptable as select(fired, value, 0): a non-fired check decrypts
     ///      to zeros and reveals only "not yet". The trigger price is never decrypted.
+    /// @param report passed to the verifier for the index price (ignored by Chainlink Data Feeds)
     function checkBatch(address market, bytes32[] calldata orderIds, bytes calldata report) external {
-        (uint256 price8, uint256 reportTimestamp) = priceVerifier.verify(market, report);
+        MarketInfo memory m = _markets[market];
+        if (m.indexToken == address(0)) revert UnsupportedMarket(market);
+        (uint256 price8, uint256 reportTimestamp) = priceVerifier.price(m.indexToken, report);
         if (reportTimestamp > block.timestamp) revert ReportFromFuture(reportTimestamp);
         if (block.timestamp - reportTimestamp > maxReportAge) revert ReportTooOld(reportTimestamp, maxReportAge);
 
         euint64 ePrice = FHE.asEuint64(price8);
         for (uint256 i; i < orderIds.length; i++) {
-            _check(orderIds[i], market, price8, reportTimestamp, ePrice);
+            _check(orderIds[i], market, m, price8, reportTimestamp, ePrice);
         }
     }
 
-    function _check(bytes32 orderId, address market, uint256 price8, uint256 reportTimestamp, euint64 ePrice) private {
+    function _check(
+        bytes32 orderId,
+        address market,
+        MarketInfo memory m,
+        uint256 price8,
+        uint256 reportTimestamp,
+        euint64 ePrice
+    ) private {
         SealedOrder storage o = _orders[orderId];
         if (o.status != Status.Open) revert OrderNotOpen(orderId);
         if (o.market != market) revert WrongMarket(orderId, market);
@@ -332,7 +374,10 @@ contract SealedOrderAdapter {
 
         ebool fired = FHE.and(o.intakeValid, _crossed(o, ePrice));
         if (o.kind == OrderKind.LimitIncrease) {
-            fired = FHE.and(fired, FHE.lte(o.sizeUsd6, FHE.asEuint64(_maxSizeUsd6(o.collateral, price8))));
+            uint256 collateralPrice8 = o.collateralToken == m.indexToken ? price8 : _price(o.collateralToken);
+            uint64 maxSize = _maxSizeUsd6(o.collateral, collateralPrice8, _tokenDecimals(m, o.collateralToken));
+            fired = FHE.and(fired, FHE.lte(o.sizeUsd6, FHE.asEuint64(maxSize)));
+            c.collateralPrice8 = collateralPrice8;
         }
 
         c.revealedSize = FHE.select(fired, o.sizeUsd6, FHE.asEuint64(0));
@@ -385,7 +430,10 @@ contract SealedOrderAdapter {
 
         SealedOrder storage o = _orders[orderId];
         if (size > maxSizeUsd6 || slippage > maxSlippageBps) revert ExceedsIndependentCaps(orderId);
-        if (o.kind == OrderKind.LimitIncrease && size > _maxSizeUsd6(o.collateral, c.checkPrice8)) {
+        if (
+            o.kind == OrderKind.LimitIncrease
+                && size > _maxSizeUsd6(o.collateral, c.collateralPrice8, _tokenDecimals(_markets[o.market], o.collateralToken))
+        ) {
             revert ExceedsIndependentCaps(orderId);
         }
 
@@ -448,6 +496,14 @@ contract SealedOrderAdapter {
         return _fills[orderId];
     }
 
+    function marketOf(address market) external view returns (MarketInfo memory) {
+        return _markets[market];
+    }
+
+    function isSupportedMarket(address market) external view returns (bool) {
+        return _markets[market].indexToken != address(0);
+    }
+
     function accountOf(address owner) external view returns (address) {
         return factory.accountOf(owner);
     }
@@ -482,7 +538,7 @@ contract SealedOrderAdapter {
         f.sizeDeltaUsd = sizeDeltaUsd;
         uint256 expected = _expectedExecutionPrice(o, f.isLong, increase, sizeDeltaUsd, price8);
         f.acceptablePrice = _withSlippage(expected, slippage, f.isLong == increase);
-        f.protocolFee = increase ? uint256(f.size6) * increaseFeeBps / BPS * WEI_PRICE8_TO_USD6 / price8 : decreaseFeeFlat;
+        f.protocolFee = increase ? _increaseFee(orderId, o, f.size6) : decreaseFeeFlat;
 
         gmxKey = IUserAccount(o.account).submit(
             orderId,
@@ -500,6 +556,13 @@ contract SealedOrderAdapter {
         f.gmxKey = gmxKey;
     }
 
+    /// @dev increaseFeeBps of the size, in collateral-token units at the check's collateral price.
+    function _increaseFee(bytes32 orderId, SealedOrder storage o, uint64 size6) private view returns (uint256) {
+        uint256 feeUsd6 = uint256(size6) * increaseFeeBps / BPS;
+        uint8 decimals = _tokenDecimals(_markets[o.market], o.collateralToken);
+        return feeUsd6 * 10 ** (uint256(decimals) + 2) / _checks[orderId].collateralPrice8;
+    }
+
     function _close(bytes32 orderId, SealedOrder storage o) private {
         o.status = Status.Cancelled;
         IUserAccount(o.account).release(orderId);
@@ -513,9 +576,30 @@ contract SealedOrderAdapter {
     }
 
     /// @dev Largest size (USD, 6 decimals) the collateral supports at `price8`, capped to uint64.
-    function _maxSizeUsd6(uint256 collateral, uint256 price8) private view returns (uint64) {
-        uint256 maxSize = collateral * price8 / WEI_PRICE8_TO_USD6 * maxLeverage;
+    ///      amount / 10^decimals * price8 / 1e8 * 1e6 = amount * price8 / 10^(decimals + 2)
+    function _maxSizeUsd6(uint256 collateral, uint256 price8, uint8 decimals) private view returns (uint64) {
+        uint256 maxSize = collateral * price8 / 10 ** (uint256(decimals) + 2) * maxLeverage;
         return maxSize > type(uint64).max ? type(uint64).max : uint64(maxSize);
+    }
+
+    /// @dev price8 (USD per whole token) -> GMX price per smallest unit, 30 decimals: price8 * 10^(22 - decimals)
+    function _toGmxPrice(uint256 price8, uint8 decimals) private pure returns (uint256) {
+        return price8 * 10 ** (22 - uint256(decimals));
+    }
+
+    function _price(address token) private returns (uint256 price8) {
+        (price8,) = priceVerifier.price(token, "");
+    }
+
+    function _tokenDecimals(MarketInfo memory m, address token) private pure returns (uint8) {
+        if (token == m.indexToken) return m.indexDecimals;
+        return token == m.longToken ? m.longDecimals : m.shortDecimals;
+    }
+
+    /// @dev WNT is handled as native ETH (18 decimals) and needn't expose `decimals()`.
+    function _decimals(address token) private view returns (uint8 d) {
+        d = token == wnt ? 18 : IERC20Metadata(token).decimals();
+        if (d > 22) revert UnsupportedDecimals(token, d);
     }
 
     struct PositionState {
@@ -532,12 +616,12 @@ contract SealedOrderAdapter {
         bool increase,
         uint256 sizeDeltaUsd,
         uint256 price8
-    ) private view returns (uint256) {
+    ) private returns (uint256) {
         PositionState memory pos = _positionState(o.account, o.market, o.collateralToken, isLong);
         return gmxReader.getExecutionPrice(
             gmxDataStore,
             o.market,
-            _marketPrices(price8),
+            _marketPrices(_markets[o.market], price8),
             pos.sizeInUsd,
             pos.sizeInTokens,
             increase ? int256(sizeDeltaUsd) : -int256(sizeDeltaUsd),
@@ -558,13 +642,16 @@ contract SealedOrderAdapter {
         pos.pendingImpactAmount = ds.getInt(keccak256(abi.encode(key, PENDING_IMPACT_AMOUNT)));
     }
 
-    /// @dev Index and long token are WNT at the report price; the short token is a USD stablecoin at $1.
-    function _marketPrices(uint256 price8) private pure returns (GmxPricing.MarketPrices memory) {
-        uint256 p = price8 * PRICE8_TO_GMX;
+    /// @dev Index at the check price; long and short tokens at their verified prices (reusing the index price
+    ///      when a pool token is the index token).
+    function _marketPrices(MarketInfo memory m, uint256 indexPrice8) private returns (GmxPricing.MarketPrices memory) {
+        uint256 index = _toGmxPrice(indexPrice8, m.indexDecimals);
+        uint256 long = _toGmxPrice(m.longToken == m.indexToken ? indexPrice8 : _price(m.longToken), m.longDecimals);
+        uint256 short = _toGmxPrice(m.shortToken == m.indexToken ? indexPrice8 : _price(m.shortToken), m.shortDecimals);
         return GmxPricing.MarketPrices({
-            indexTokenPrice: GmxPricing.Price(p, p),
-            longTokenPrice: GmxPricing.Price(p, p),
-            shortTokenPrice: GmxPricing.Price(STABLE_PRICE_GMX, STABLE_PRICE_GMX)
+            indexTokenPrice: GmxPricing.Price(index, index),
+            longTokenPrice: GmxPricing.Price(long, long),
+            shortTokenPrice: GmxPricing.Price(short, short)
         });
     }
 

@@ -16,10 +16,12 @@ Trade-off accepted: triggers can fire a little later than with Data Streams, and
 
 ## How the adapter uses a feed
 
+- The verifier prices **tokens**: `price(token, report)` returns the token feed's latest answer normalised to 8 decimals and its `updatedAt`; the report argument is ignored.
+- Each token has its own max age; the verifier reverts with `StalePrice` beyond it. Sepolia settings: WETH and BTC 300 s, USDC.SG 90,000 s (USDC/USD updates every 24 h on Sepolia, ETH/USD and BTC/USD every 30–150 s).
+- The adapter prices the index token for triggers (with its own stricter `maxReportAge`), the collateral token for leverage and fees, and long and short tokens for GMX's execution estimate.
 - `checkBatch(market, orderIds, "")`: the report argument is ignored.
-- `verify` returns the feed's latest answer normalised to 8 decimals, and its `updatedAt`.
 - The adapter's existing rules apply to `updatedAt`:
-  - `maxReportAge`: rejects a stale feed. Set per deployment to at least the feed's heartbeat: 300 s is enough on Sepolia; Arbitrum One ETH/USD can go up to its 24 h heartbeat when the price is flat.
+  - `maxReportAge`: rejects a stale index price for triggers. Set per deployment to at least the feed's heartbeat: 300 s is enough on Sepolia; Arbitrum One ETH/USD can go up to its 24 h heartbeat when the price is flat.
   - Strictly newer per order: an order is only re-checked after the feed publishes a new answer, since an unchanged answer carries no new information.
 - Non-positive answers are rejected.
 - **L2 sequencer:** on Arbitrum One, pass Chainlink's sequencer-uptime feed; prices are rejected while the sequencer is down and for a grace period after it restarts. None is configured on Sepolia.

@@ -61,7 +61,6 @@ contract MockGmxExchangeRouter {
 /// @notice Returns the index price as the execution price (no price impact) unless a fill price is forced.
 contract MockGmxReader is IGmxReader {
     uint256 public forcedExecutionPrice;
-    int256 public lastSizeDeltaUsd;
 
     function forceExecutionPrice(uint256 price) external {
         forcedExecutionPrice = price;

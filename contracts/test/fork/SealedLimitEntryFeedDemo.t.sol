@@ -17,7 +17,8 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
     uint256 private constant COLLATERAL = 0.02 ether;
     uint256 private constant EXEC_FEE = 0.001 ether;
     uint64 private constant SIZE = 100e6;
-    uint32 private constant FEED_MAX_AGE = 300; // Sepolia feed updates every 30-120 s
+    uint32 private constant FEED_MAX_AGE = 300; // Sepolia ETH/USD updates every 30-120 s
+    uint32 private constant USDC_FEED_MAX_AGE = 90_000; // Sepolia USDC/USD updates every 24 h
 
     NetworkConfig.Gmx private gmx;
     NetworkConfig.Market private ethUsd;
@@ -33,10 +34,13 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
         ethFeed = NetworkConfig.chainlinkFeed(json, "ETH_USD");
         GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
 
-        address[] memory markets = new address[](1);
-        address[] memory feeds = new address[](1);
-        (markets[0], feeds[0]) = (ethUsd.marketToken, ethFeed);
-        verifier = new ChainlinkFeedPriceVerifier(markets, feeds, address(0), 0);
+        address[] memory tokens = new address[](2);
+        address[] memory feeds = new address[](2);
+        uint32[] memory maxAges = new uint32[](2);
+        (tokens[0], feeds[0], maxAges[0]) = (ethUsd.indexToken, ethFeed, FEED_MAX_AGE);
+        (tokens[1], feeds[1], maxAges[1]) =
+            (ethUsd.shortToken, NetworkConfig.chainlinkFeed(json, "USDC_USD"), USDC_FEED_MAX_AGE);
+        verifier = new ChainlinkFeedPriceVerifier(tokens, feeds, maxAges, address(0), 0);
 
         UserAccount impl = new UserAccount(
             UserAccount.GmxContracts({
@@ -49,8 +53,14 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
             }),
             feeCollector
         );
-        _deployAdapterWithVerifier(
-            address(impl), gmx.wnt, ethUsd.marketToken, gmx.reader, gmx.dataStore, address(verifier), FEED_MAX_AGE
+        _deployAdapterFor(
+            address(impl),
+            gmx.wnt,
+            _market(ethUsd.marketToken, ethUsd.indexToken, ethUsd.longToken, ethUsd.shortToken),
+            gmx.reader,
+            gmx.dataStore,
+            address(verifier),
+            FEED_MAX_AGE
         );
         _fund(alice.account(), 0.1 ether);
     }
@@ -71,7 +81,7 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
     }
 
     function test_liveFeed_isReadableAndFresh() public view {
-        (uint256 price8, uint256 updatedAt) = verifier.verify(ethUsd.marketToken, "");
+        (uint256 price8, uint256 updatedAt) = verifier.price(ethUsd.indexToken, "");
         assertGt(price8, 500e8, "plausible ETH price");
         assertLt(price8, 20_000e8, "plausible ETH price");
         assertLe(updatedAt, block.timestamp);
@@ -79,7 +89,7 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
     }
 
     function test_demo_feedPricedLimitEntry_firesAndFills() public {
-        (uint256 live8,) = verifier.verify(ethUsd.marketToken, "");
+        (uint256 live8,) = verifier.price(ethUsd.indexToken, "");
         uint64 trigger = uint64(live8 * 99 / 100); // buy 1% below the live price
         bytes32 orderId = _submitAs(
             alice, _input(alice, ethUsd.marketToken, COLLATERAL, EXEC_FEE, Plain(true, SIZE, trigger, 100))
@@ -107,7 +117,7 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
     }
 
     function test_sameFeedAnswer_cannotBeCheckedTwice() public {
-        (uint256 live8,) = verifier.verify(ethUsd.marketToken, "");
+        (uint256 live8,) = verifier.price(ethUsd.indexToken, "");
         bytes32 orderId = _submitAs(
             alice,
             _input(alice, ethUsd.marketToken, COLLATERAL, EXEC_FEE, Plain(true, SIZE, uint64(live8 / 2), 100))
@@ -118,14 +128,20 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
         _checkWithFeed(orderId); // no new feed round: nothing new to learn, so no new check
     }
 
+    function test_liveUsdcFeed_acceptedWithinItsOwnMaxAge() public view {
+        (uint256 price8,) = verifier.price(ethUsd.shortToken, "");
+        assertApproxEqRel(price8, 1e8, 0.02e18, "USDC ~ $1");
+    }
+
     function test_staleFeed_rejected() public {
-        (uint256 live8,) = verifier.verify(ethUsd.marketToken, "");
+        (uint256 live8,) = verifier.price(ethUsd.indexToken, "");
         bytes32 orderId = _submitAs(
             alice,
             _input(alice, ethUsd.marketToken, COLLATERAL, EXEC_FEE, Plain(true, SIZE, uint64(live8 / 2), 100))
         );
         vm.warp(block.timestamp + FEED_MAX_AGE + 1);
-        vm.expectPartialRevert(SealedOrderAdapter.ReportTooOld.selector);
+        // The verifier's per-token max age rejects it before the adapter's own trigger-age rule.
+        vm.expectPartialRevert(ChainlinkFeedPriceVerifier.StalePrice.selector);
         _checkWithFeed(orderId);
     }
 

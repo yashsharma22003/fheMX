@@ -68,9 +68,10 @@
     "USDC_USD": "0x0153002d20B96532C639313c2d54c3dA09109309"
   },
   "adapter": {
-    "comment": "Deployment parameters for SealedOrderAdapter (all immutable once deployed). Testnet values; revisit before mainnet (design \u00a710).",
+    "comment": "Deployment parameters for SealedOrderAdapter (all immutable once deployed). Testnet values; revisit before mainnet (design \u00a710). priceFeeds: per-token Chainlink feed and max age (USDC/USD updates every 24 h on Sepolia).",
     "markets": [
-      "ETH_USD"
+      "ETH_USD",
+      "BTC_USD"
     ],
     "minSizeUsd6": "10000000",
     "maxSizeUsd6": "100000000000",
@@ -82,6 +83,23 @@
     "minExecutionFeeWei": "500000000000000",
     "maxReportAgeSeconds": 300,
     "minCheckIntervalSeconds": 10,
-    "callbackGasLimit": 500000
+    "callbackGasLimit": 500000,
+    "priceFeeds": [
+      {
+        "token": "WETH",
+        "feed": "ETH_USD",
+        "maxAgeSeconds": 300
+      },
+      {
+        "token": "BTC",
+        "feed": "BTC_USD",
+        "maxAgeSeconds": 300
+      },
+      {
+        "token": "USDC_SG",
+        "feed": "USDC_USD",
+        "maxAgeSeconds": 90000
+      }
+    ]
   }
 }

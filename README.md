@@ -53,6 +53,9 @@ pnpm -F checker start
 # 3. Place a sealed order from another terminal
 pnpm -F client cli fund 0.05
 pnpm -F client cli order --kind limit --side long --size 100 --trigger 2400 --slippage 100 --collateral 0.02
+# other markets / collateral, e.g. BTC with USDC.SG:
+pnpm -F client cli fund-token USDC_SG 50
+pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
 pnpm -F client cli status 1
 ```
 

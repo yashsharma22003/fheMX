@@ -76,12 +76,14 @@ async function decrypt(handle: Hex) {
   return { value: result.decryptedValue, signature: result.signature, ms: Date.now() - started };
 }
 
+/** Update time of the market's index-token feed: a new answer is what makes a new check worthwhile. */
 async function feedUpdatedAt(market: Address): Promise<bigint> {
-  const feed = await c.publicClient.readContract({
+  const info = await c.publicClient.readContract({ ...adapter, functionName: "marketOf", args: [market] });
+  const [feed] = await c.publicClient.readContract({
     address: deployment.priceVerifier,
     abi: chainlinkFeedPriceVerifierAbi,
     functionName: "feedOf",
-    args: [market],
+    args: [info.indexToken],
   });
   const round = await c.publicClient.readContract({ address: feed, abi: aggregatorV3Abi, functionName: "latestRoundData" });
   return round[3];
