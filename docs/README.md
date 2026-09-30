@@ -9,6 +9,7 @@ Reference for the Sealed Order Privacy Layer. Current as of 2026-09-30.
 | [fee-model.md](fee-model.md) | Fee model (D6): the spec as received, plus implementation notes on where the build differs and which milestone builds each part. |
 | [build-plan.md](build-plan.md) | What's done, the proposed milestone order, open planning questions. |
 | [live-run-2026-09-30.md](live-run-2026-09-30.md) | First live run on Arbitrum Sepolia: deployed addresses, what was run, measured gas, latency and cost. |
+| [frontend/FRONTEND_CONTEXT.md](frontend/FRONTEND_CONTEXT.md) | Brief for building the web app: product, lifecycle, contract interface, units, CoFHE browser usage, screens, UX, acceptance checklist. |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Deferred design gaps and environment gaps, each with its fix. |
 | [integration/gmx-v2.md](integration/gmx-v2.md) | GMX V2: live Sepolia addresses and how to re-verify them, tokens and markets, protocol behaviour we depend on, copied interfaces. |
 | [integration/cofhe.md](integration/cofhe.md) | Fhenix CoFHE: packages, components and who runs them, key custody, the contract API we use, decrypt flow, access control, testing. |
