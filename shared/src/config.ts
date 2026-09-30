@@ -42,8 +42,10 @@ export function deploymentBlock(): bigint | undefined {
   return blocks.length ? blocks.reduce((a, b) => (a < b ? a : b)) : undefined;
 }
 
+/** Reads an environment variable; an empty value (e.g. `NAME=` in .env) counts as unset and uses the fallback. */
 export function env(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback;
+  const raw = process.env[name];
+  const value = raw !== undefined && raw !== "" ? raw : fallback;
   if (value === undefined || value === "") throw new Error(`Missing environment variable ${name} (see .env.example)`);
   return value;
 }
