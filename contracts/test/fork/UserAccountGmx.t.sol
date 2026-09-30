@@ -36,6 +36,7 @@ contract UserAccountGmxForkTest is Test {
         gmx = NetworkConfig.gmx(json);
         ethUsd = NetworkConfig.market(json, "ETH_USD");
 
+        GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
         UserAccount impl =
             new UserAccount(_gmxContracts(), feeCollector);
         UserAccountFactory factory = new UserAccountFactory(address(impl), address(this));
@@ -58,6 +59,7 @@ contract UserAccountGmxForkTest is Test {
             ORDER,
             IUserAccount.OrderRequest({
                 market: ethUsd.marketToken,
+                collateralToken: gmx.wnt,
                 isLong: true,
                 isIncrease: true,
                 sizeDeltaUsd: SIZE_USD,
@@ -145,7 +147,7 @@ contract UserAccountGmxForkTest is Test {
     }
 
     function test_lostCancellationCallback_reconcileRecordsCancelled_collateralBackUnderLock() public {
-        bytes32 gmxKey = _submitWith(1);
+        _submitWith(1);
         uint256 expiry = IGmxDataStore(gmx.dataStore).getUint(GmxKeys.REQUEST_EXPIRATION_TIME);
         vm.warp(block.timestamp + expiry + 1);
         vm.prank(owner);
@@ -209,6 +211,7 @@ contract UserAccountGmxForkTest is Test {
             order2,
             IUserAccount.OrderRequest({
                 market: ethUsd.marketToken,
+                collateralToken: usdc,
                 isLong: true,
                 isIncrease: true,
                 sizeDeltaUsd: SIZE_USD,

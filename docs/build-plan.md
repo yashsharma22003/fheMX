@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-25: milestones 1–5 done; milestone 6 (Data Streams) next, needs credentials.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–5 and 7 done; milestone 6 (Data Streams) and 8 (live Sepolia) remain.
 
 ## Done: setup
 
@@ -40,6 +40,13 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - Tests: 14 unit tests (`UserAccountRecovery.t.sol`); 6 new fork tests on live GMX: lost execution and cancellation callbacks recovered by reconcile (fee still collected), owner cancel, manual close of a real position, USDC collateral.
 - Closes known issues 8 and 9; adds 12 (reconcile refuses if the position shrank after a lost-callback fill) and 13 (one manual close at a time).
 
+## Done: milestone 7, stop-loss, take-profit and re-arm
+
+- `SealedOrderAdapter`: `OrderKind.StopLoss` / `TakeProfit` against the account's existing position (no collateral; flat ETH fee reserve); direction by kind with the side selected on ciphertext; decreases skip the leverage check; execute trims to the live position or voids if it's gone; acceptable price below the check price when selling, above when buying. `rearm(orderId)` per D4.
+- `UserAccount`: decrease orders (`MarketDecrease`, no collateral moves), decrease-aware `reconcile`, `cancelledByOwner`.
+- Tests: 19 adapter unit tests (`SealedOrderAdapterDecrease.t.sol`), 4 more account tests; fork demo (`test/fork/SealedStopLossDemo.t.sol`): a sealed stop-loss closes a real position opened by a sealed limit entry, and a stop GMX rejects on slippage fills on the re-arm.
+- Closes known issues 1–4. Found and recorded 14 (GMX pending price impact makes tight stop-loss bounds fail) and 15 (testnet drift; fixed in tests with fixtures).
+
 ## Milestones
 
 Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes before the full clone. The adapter codes against `IUserAccount`; the clone is built in two steps behind that interface, so nothing is thrown away.
@@ -52,7 +59,7 @@ Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes b
 | 4 | Trigger check → execute, one order (**demo**) ✅ | `checkBatch` with one order and a mocked price report, zero-unless-fired decrypt, publish, `execute` into the clone. A full limit entry works end to end on the fork. Leverage cap evaluated in the check against the report price. Protocol fee (D6) computed at execute and collected after the fill. | `contracts/src/adapter`, `src/oracle` |
 | 5 | Complete the clone ✅ | Owner cancel and manual close, ERC20 collateral, reconcile for lost callbacks. Adapter unchanged. Closes known issues 8 and 9. | `contracts/src/account` |
 | 6 | Data Streams verification | Real report decoding and verification; report-age and increasing-timestamp rules; D3 per-check fee with its spread to the fee collector. Needs credentials. | `contracts/src/oracle` |
-| 7 | Decrease orders and re-arm | Stop-loss and take-profit, live-position size trim, `rearm()`, decrease fee (default 0). Fixes known issues 1–4. | `contracts/src/adapter`, `src/account` |
+| 7 | Decrease orders and re-arm ✅ | Stop-loss and take-profit, live-position size trim, `rearm()`, decrease fee (default 0). Fixes known issues 1–4. | `contracts/src/adapter`, `src/account` |
 | 8 | Checker and client, live Sepolia | Real encryption with `@cofhe/sdk`, a checker loop, contracts deployed to Sepolia. Produces the latency and cost numbers in design §10. | `checker/`, `client/`, `contracts/script` |
 
 First demo scope: limit entries only; stop-loss and take-profit arrive in milestone 7.

@@ -27,6 +27,7 @@ contract SealedLimitEntryDemoForkTest is SealedOrderAdapterTestBase {
         gmx = NetworkConfig.gmx(json);
         ethUsd = NetworkConfig.market(json, "ETH_USD");
 
+        GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
         UserAccount impl =
             new UserAccount(_gmxContracts(), feeCollector);
         _deployAdapter(address(impl), gmx.wnt, ethUsd.marketToken);

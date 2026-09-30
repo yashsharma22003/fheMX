@@ -45,6 +45,11 @@ Design choices D1–D5 are recommended defaults from [design-v0.2.md](design-v0.
 | 2026-09-25 | — | Owner manual close is blocked while any adapter order is in flight, and adapter submits wait until a manual close has left GMX's order list. | Reconcile relies on the position only growing through adapter orders while they are pending. | — |
 | 2026-09-25 | — | Account balances are per token; execution fees are always ETH; collateral and protocol-fee reserve are in the collateral token; ERC20 collateral goes to GMX via Router approval + `sendTokens` in the same multicall. | GMX takes execution fees in native token only; fees charged in the collateral the user actually posted. | Milestone 2: ETH-only account. |
 
+| 2026-09-30 | — | Stop-loss and take-profit: public kind, side selected on ciphertext (take-profit is the reverse direction); no collateral and no leverage check; at execute the size is trimmed to the live position, and the order is voided if the position is gone. | Order kind is public by design (§5); GMX rejects oversized market decreases. | Design §4 step 5 (decrease clamp). |
+| 2026-09-30 | — | Decrease fee is a flat ETH amount (`decreaseFeeFlat`, immutable, default 0), reserved at intake. | The fee spec allows `DECREASE_FEE_FLAT`; a flat fee needs no price conversion, so the reserve is exact and reveals nothing. | Fee spec: `DECREASE_FEE_BPS` or flat. |
+| 2026-09-30 | D4 | `rearm(orderId)` is permissionless and one-shot: only after GMX cancelled a fired order, never after an owner cancel; re-submits at the price the order fired at with max(fallback, sealed) slippage; re-runs the execute path (trim or void). | Needs no new price report and stays tied to the price that fired the order; bounded by the user's own public fallback. | D4 as drafted: "wider public bound" without a reference price. |
+| 2026-09-30 | — | Fork-test fixtures raise GMX reserve factors and, where slippage is asserted, zero position price impact on the test market. | Shared testnet pools drift (reserve cap hit, heavy imbalance); tests should check our logic, and the public RPC can't pin an older block. | Fork tests against raw latest state. |
+
 ## Corrected facts
 
 Where a working assumption turned out to be wrong. Kept so the same mistake isn't made again.

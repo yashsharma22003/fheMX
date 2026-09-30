@@ -7,6 +7,7 @@ import {
     GmxOracleUtils,
     GmxPrice,
     GmxKeys,
+    IGmxDataStore,
     IGmxOracle,
     IGmxOrderHandler,
     IGmxRoleStoreMembers
@@ -25,6 +26,31 @@ library GmxKeeperSimulator {
         address token;
         uint256 min;
         uint256 max;
+    }
+
+    /// @notice Test fixture: lift the market's reserve factors so small test positions always fit.
+    /// @dev Sepolia pools are shared and drift: on 2026-09-30 the ETH/USD long side was at its reserve cap
+    ///      (`InsufficientReserveForOpenInterest`), failing every fork test that opens a long. Pinning a block
+    ///      needs an archive RPC; instead tests raise the caps as a CONTROLLER, like the price fixture above.
+    function ensureOpenInterestCapacity(NetworkConfig.Gmx memory gmx, address market) internal {
+        vm.startPrank(gmx.orderHandler);
+        for (uint256 i; i < 2; i++) {
+            bool isLong = i == 0;
+            IGmxDataStore(gmx.dataStore).setUint(GmxKeys.reserveFactorKey(market, isLong), 1_000e30);
+            IGmxDataStore(gmx.dataStore).setUint(GmxKeys.openInterestReserveFactorKey(market, isLong), 1_000e30);
+        }
+        vm.stopPrank();
+    }
+
+    /// @notice Test fixture: turn off position price impact on the market, so fills happen at the oracle price.
+    /// @dev The Sepolia ETH/USD pool is heavily long-imbalanced; GMX holds a new long's negative price impact as
+    ///      pending and applies it on close, so on 2026-09-30 a $100 long closed ~15% below the oracle price.
+    ///      Tests that assert on slippage bounds use this to test our logic rather than testnet pool state.
+    function disablePositionImpact(NetworkConfig.Gmx memory gmx, address market) internal {
+        vm.startPrank(gmx.orderHandler);
+        IGmxDataStore(gmx.dataStore).setUint(GmxKeys.positionImpactFactorKey(market, true), 0);
+        IGmxDataStore(gmx.dataStore).setUint(GmxKeys.positionImpactFactorKey(market, false), 0);
+        vm.stopPrank();
     }
 
     /// @dev GMX prices are USD per smallest token unit, scaled so that price * amount has 30 decimals.

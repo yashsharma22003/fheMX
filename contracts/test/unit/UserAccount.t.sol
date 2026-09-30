@@ -59,7 +59,7 @@ contract UserAccountTest is Test {
     }
 
     function _request() internal pure returns (IUserAccount.OrderRequest memory r) {
-        r = IUserAccount.OrderRequest(MARKET, true, true, 2_000e30, COLLATERAL, type(uint256).max, 500_000);
+        r = IUserAccount.OrderRequest(MARKET, WNT, true, true, 2_000e30, COLLATERAL, type(uint256).max, 500_000);
     }
 
     function _submit() internal returns (bytes32 gmxKey) {
@@ -161,12 +161,21 @@ contract UserAccountTest is Test {
         account.submit(ORDER, r);
     }
 
-    function test_submit_rejectsDecreaseForNow() public {
+    function test_submit_decreaseMustNotMoveCollateral() public {
         _lock();
         IUserAccount.OrderRequest memory r = _request();
         r.isIncrease = false;
         vm.prank(adapter);
-        vm.expectRevert(IUserAccount.DecreaseNotSupported.selector);
+        vm.expectRevert(IUserAccount.DecreaseMovesNoCollateral.selector);
+        account.submit(ORDER, r);
+    }
+
+    function test_submit_increaseCollateralTokenMustMatchLock() public {
+        _lock();
+        IUserAccount.OrderRequest memory r = _request();
+        r.collateralToken = address(0xBEEF);
+        vm.prank(adapter);
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.CollateralTokenMismatch.selector, address(0xBEEF), WNT));
         account.submit(ORDER, r);
     }
 

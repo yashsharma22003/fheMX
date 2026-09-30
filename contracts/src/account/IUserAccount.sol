@@ -18,8 +18,11 @@ interface IUserAccount {
 
     /// @dev What the adapter asks for. The account builds GMX's CreateOrderParams itself and always
     ///      routes funds and callbacks back to itself.
+    /// @dev For increase orders `collateralToken` must be the lock's token; for decrease orders it names the
+    ///      position being reduced and no collateral moves (`collateralDelta` = 0).
     struct OrderRequest {
         address market;
+        address collateralToken;
         bool isLong;
         bool isIncrease;
         uint256 sizeDeltaUsd;
@@ -56,7 +59,8 @@ interface IUserAccount {
     error CollateralExceedsLock(uint256 requested, uint256 locked);
     error OrderInFlight(bytes32 orderId);
     error NotInFlight(bytes32 orderId);
-    error DecreaseNotSupported();
+    error CollateralTokenMismatch(address requested, address locked);
+    error DecreaseMovesNoCollateral();
     error FeeNotPayable(bytes32 orderId, GmxOutcome outcome);
     error FeeExceedsReserve(uint256 requested, uint256 reserved);
     error TransferFailed();
@@ -96,4 +100,6 @@ interface IUserAccount {
     function lockOf(bytes32 orderId) external view returns (Lock memory);
     function outcomeOf(bytes32 orderId) external view returns (GmxOutcome outcome, bytes32 gmxKey);
     function positionSizeUsd(address market, address collateralToken, bool isLong) external view returns (uint256);
+    /// @notice True if the owner cancelled this order's GMX order (so it must not be re-armed).
+    function cancelledByOwner(bytes32 orderId) external view returns (bool);
 }

@@ -18,7 +18,6 @@ interface IGmxDataStoreView {
 
 /// @notice Per-user GMX account, deployed as an EIP-1167 clone by UserAccountFactory.
 /// @dev GMX addresses and the fee collector are implementation immutables, shared by every clone.
-///      Adapter orders are increase-only for now (decrease orders arrive in milestone 7).
 contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallbackReceiver, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
@@ -47,6 +46,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         address market;
         address token;
         bool isLong;
+        bool isIncrease;
         uint256 sizeBefore;
         uint256 sizeDelta;
         uint256 collateralDelta;
@@ -72,6 +72,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
     mapping(bytes32 gmxKey => bytes32 orderId) private _orderOf;
     mapping(bytes32 orderId => InFlight) private _inFlight;
     mapping(address token => uint256) private _locked;
+    mapping(bytes32 orderId => bool) public cancelledByOwner;
     uint256 public pendingCount;
     bytes32 public manualCloseKey;
 
@@ -161,34 +162,41 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         if (l.token == address(0)) revert NoLock(orderId);
         if (_outcomes[orderId] == GmxOutcome.Pending) revert OrderInFlight(orderId);
         if (l.attemptsLeft == 0) revert NoAttemptsLeft(orderId);
-        if (!request.isIncrease) revert DecreaseNotSupported();
-        if (request.collateralDelta > l.collateral) revert CollateralExceedsLock(request.collateralDelta, l.collateral);
+        if (request.isIncrease) {
+            if (request.collateralToken != l.token) revert CollateralTokenMismatch(request.collateralToken, l.token);
+            if (request.collateralDelta > l.collateral) {
+                revert CollateralExceedsLock(request.collateralDelta, l.collateral);
+            }
+        } else if (request.collateralDelta != 0) {
+            revert DecreaseMovesNoCollateral();
+        }
         _requireNoManualClose();
 
-        address token = l.token;
         uint256 executionFee = l.feePerAttempt;
         l.collateral -= request.collateralDelta;
         l.attemptsLeft -= 1;
-        _locked[token] -= request.collateralDelta;
+        _locked[l.token] -= request.collateralDelta;
         _locked[wnt] -= executionFee;
 
         _inFlight[orderId] = InFlight({
             market: request.market,
-            token: token,
+            token: request.collateralToken,
             isLong: request.isLong,
-            sizeBefore: positionSizeUsd(request.market, token, request.isLong),
+            isIncrease: request.isIncrease,
+            sizeBefore: positionSizeUsd(request.market, request.collateralToken, request.isLong),
             sizeDelta: request.sizeDeltaUsd,
             collateralDelta: request.collateralDelta
         });
 
-        GmxBaseOrderUtils.CreateOrderParams memory params = _baseParams(request.market, token, request.isLong);
+        GmxBaseOrderUtils.CreateOrderParams memory params =
+            _baseParams(request.market, request.collateralToken, request.isLong);
         params.numbers.sizeDeltaUsd = request.sizeDeltaUsd;
         params.numbers.acceptablePrice = request.acceptablePrice;
         params.numbers.executionFee = executionFee;
         params.numbers.callbackGasLimit = request.callbackGasLimit;
-        params.orderType = GmxOrder.OrderType.MarketIncrease;
+        params.orderType = request.isIncrease ? GmxOrder.OrderType.MarketIncrease : GmxOrder.OrderType.MarketDecrease;
 
-        gmxKey = _createOrder(params, token, request.collateralDelta, executionFee);
+        gmxKey = _createOrder(params, request.collateralToken, request.collateralDelta, executionFee);
 
         _gmxKeyOf[orderId] = gmxKey;
         _orderOf[gmxKey] = orderId;
@@ -213,9 +221,10 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
 
     // ─── reconcile (known issue 9) ────────────────────────────────────────────
 
-    /// @dev Executed if the position grew by at least the order's size since submission (only adapter
-    ///      increases can grow it: manual closes are blocked while adapter orders are in flight).
-    ///      Otherwise cancelled, but only if the collateral is actually back in this account.
+    /// @dev Increase: executed if the position grew by at least the order size since submission; otherwise
+    ///      cancelled, but only if the collateral is actually back in this account.
+    ///      Decrease: executed if the position shrank by at least the order size; cancelled if unchanged.
+    ///      Only adapter orders change the position while they are in flight: manual closes are blocked.
     function reconcile(bytes32 orderId) external returns (GmxOutcome outcome) {
         if (_outcomes[orderId] != GmxOutcome.Pending) revert NotInFlight(orderId);
         bytes32 gmxKey = _gmxKeyOf[orderId];
@@ -223,10 +232,20 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
 
         InFlight memory f = _inFlight[orderId];
         uint256 sizeNow = positionSizeUsd(f.market, f.token, f.isLong);
-        if (sizeNow >= f.sizeBefore + f.sizeDelta) {
+        bool executed;
+        bool cancelled;
+        if (f.isIncrease) {
+            executed = sizeNow >= f.sizeBefore + f.sizeDelta;
+            cancelled = !executed && _balanceOf(f.token) >= _locked[f.token] + f.collateralDelta;
+        } else {
+            executed = sizeNow + f.sizeDelta <= f.sizeBefore;
+            cancelled = !executed && sizeNow == f.sizeBefore;
+        }
+
+        if (executed) {
             outcome = GmxOutcome.Executed;
             _onExecuted(orderId, gmxKey);
-        } else if (_balanceOf(f.token) >= _locked[f.token] + f.collateralDelta) {
+        } else if (cancelled) {
             outcome = GmxOutcome.Cancelled;
             _onCancelled(orderId, gmxKey);
         } else {
@@ -248,6 +267,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
     ///         The outcome arrives through GMX's cancellation callback.
     function cancelGmxOrder(bytes32 orderId) external onlyOwner {
         if (_outcomes[orderId] != GmxOutcome.Pending) revert NotInFlight(orderId);
+        cancelledByOwner[orderId] = true;
         exchangeRouter.cancelOrder(_gmxKeyOf[orderId]);
     }
 

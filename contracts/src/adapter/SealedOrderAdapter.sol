@@ -6,9 +6,10 @@ import {IUserAccount} from "../account/IUserAccount.sol";
 import {UserAccountFactory} from "../account/UserAccountFactory.sol";
 import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
 
-/// @notice Accepts sealed conditional orders for GMX V2 and (from milestone 4) fires them.
-/// @dev Scope through milestone 4: limit-entry (increase) orders on markets whose index token is the
-///      collateral token (WNT), so one report prices both the trigger and the collateral.
+/// @notice Accepts sealed conditional orders for GMX V2 and fires them when their hidden trigger is crossed.
+/// @dev Order kinds: limit entry (increase, collateral WNT), stop-loss and take-profit (decrease an existing
+///      position of the user's account). Increase orders are limited to markets whose index token is the
+///      collateral token (WNT), so one report prices both the trigger and the collateral (known issue 10).
 ///      Encrypted fixed-point conventions:
 ///        size:          USD with 6 decimals (euint64)  -> GMX sizeDeltaUsd = size * 1e24
 ///        trigger price: USD with 8 decimals (euint64)
@@ -16,7 +17,9 @@ import {IPriceVerifier} from "../oracle/IPriceVerifier.sol";
 ///      All parameters are immutable (design §6: no admin, caps set at deployment).
 contract SealedOrderAdapter {
     enum OrderKind {
-        LimitIncrease
+        LimitIncrease,
+        StopLoss,
+        TakeProfit
     }
 
     enum Status {
@@ -37,6 +40,7 @@ contract SealedOrderAdapter {
         uint32 maxFallbackSlippageBps;
         uint16 maxLeverage;
         uint16 increaseFeeBps;
+        uint256 decreaseFeeFlat;
         uint256 minExecutionFee;
         address priceVerifier;
         uint32 maxReportAge;
@@ -44,9 +48,12 @@ contract SealedOrderAdapter {
         uint32 callbackGasLimit;
     }
 
+    /// @dev `collateral` is posted collateral for a limit entry and must be 0 for stop-loss/take-profit.
+    ///      `collateralToken` is WNT for a limit entry, or the collateral token of the position being reduced.
     struct SealedOrderInput {
         address market;
         OrderKind kind;
+        address collateralToken;
         uint256 collateral;
         uint256 executionFee;
         uint32 fallbackSlippageBps;
@@ -66,6 +73,7 @@ contract SealedOrderAdapter {
         address market;
         OrderKind kind;
         Status status;
+        address collateralToken;
         uint256 collateral;
         uint32 fallbackSlippageBps;
         ebool isLong;
@@ -86,12 +94,16 @@ contract SealedOrderAdapter {
         euint32 revealedSlippage;
     }
 
+    /// @dev Plaintext terms once fired. `size6` is the revealed (untrimmed) size, reused by a re-arm.
     struct Fill {
         uint256 sizeDeltaUsd;
+        uint64 size6;
         bool isLong;
+        uint32 slippage;
         uint256 acceptablePrice;
         uint256 protocolFee;
         bytes32 gmxKey;
+        bool rearmed;
     }
 
     uint8 public constant EXECUTION_ATTEMPTS = 2; // first try + one re-arm (design D4)
@@ -111,6 +123,7 @@ contract SealedOrderAdapter {
     uint32 public immutable maxFallbackSlippageBps;
     uint16 public immutable maxLeverage;
     uint16 public immutable increaseFeeBps;
+    uint256 public immutable decreaseFeeFlat;
     uint256 public immutable minExecutionFee;
     IPriceVerifier public immutable priceVerifier;
     uint32 public immutable maxReportAge;
@@ -138,10 +151,14 @@ contract SealedOrderAdapter {
     event OrderFired(
         bytes32 indexed orderId, bytes32 indexed gmxKey, uint256 sizeDeltaUsd, bool isLong, uint256 acceptablePrice, uint256 protocolFee
     );
+    event OrderVoided(bytes32 indexed orderId);
+    event OrderRearmed(bytes32 indexed orderId, bytes32 indexed gmxKey, uint256 sizeDeltaUsd, uint256 acceptablePrice);
     event OrderFilled(bytes32 indexed orderId, uint256 protocolFee);
 
     error UnsupportedMarket(address market);
     error ZeroCollateral();
+    error DecreaseTakesNoCollateral();
+    error UnsupportedCollateral(address token);
     error ExecutionFeeTooLow(uint256 fee, uint256 minimum);
     error FallbackSlippageTooHigh(uint32 bps, uint32 maximum);
     error NotOrderOwner(bytes32 orderId);
@@ -156,10 +173,11 @@ contract SealedOrderAdapter {
     error NotFired(bytes32 orderId);
     error ExceedsIndependentCaps(bytes32 orderId);
     error NotFilled(bytes32 orderId);
+    error NotRearmable(bytes32 orderId);
 
     constructor(Config memory cfg) {
         if (cfg.minSizeUsd6 == 0 || cfg.minSizeUsd6 > cfg.maxSizeUsd6 || cfg.maxLeverage == 0) revert InvalidConfig();
-        if (cfg.maxSlippageBps > BPS || cfg.maxFallbackSlippageBps > BPS || cfg.increaseFeeBps > BPS) {
+        if (cfg.maxSlippageBps >= BPS || cfg.maxFallbackSlippageBps >= BPS || cfg.increaseFeeBps > BPS) {
             revert InvalidConfig();
         }
         factory = new UserAccountFactory(cfg.accountImplementation, address(this));
@@ -170,6 +188,7 @@ contract SealedOrderAdapter {
         maxFallbackSlippageBps = cfg.maxFallbackSlippageBps;
         maxLeverage = cfg.maxLeverage;
         increaseFeeBps = cfg.increaseFeeBps;
+        decreaseFeeFlat = cfg.decreaseFeeFlat;
         minExecutionFee = cfg.minExecutionFee;
         priceVerifier = IPriceVerifier(cfg.priceVerifier);
         maxReportAge = cfg.maxReportAge;
@@ -183,11 +202,17 @@ contract SealedOrderAdapter {
     // ─── intake ───────────────────────────────────────────────────────────────
 
     /// @notice Submit a sealed order. Encrypted inputs must be created for this contract by msg.sender.
-    ///         Collateral and fees must already sit in msg.sender's account (its address is
-    ///         `factory.accountOf(msg.sender)`, fundable before it exists); the account is created on first use.   
+    ///         Funds must already sit in msg.sender's account (its address is `factory.accountOf(msg.sender)`,
+    ///         fundable before it exists); the account is created on first use.
     function submitOrder(SealedOrderInput calldata input) external returns (bytes32 orderId) {
         if (!isSupportedMarket[input.market]) revert UnsupportedMarket(input.market);
-        if (input.collateral == 0) revert ZeroCollateral();
+        bool increase = input.kind == OrderKind.LimitIncrease;
+        if (increase) {
+            if (input.collateral == 0) revert ZeroCollateral();
+            if (input.collateralToken != wnt) revert UnsupportedCollateral(input.collateralToken);
+        } else if (input.collateral != 0) {
+            revert DecreaseTakesNoCollateral();
+        }
         if (input.executionFee < minExecutionFee) revert ExecutionFeeTooLow(input.executionFee, minExecutionFee);
         if (input.fallbackSlippageBps > maxFallbackSlippageBps) {
             revert FallbackSlippageTooHigh(input.fallbackSlippageBps, maxFallbackSlippageBps);
@@ -197,12 +222,13 @@ contract SealedOrderAdapter {
         if (account.code.length == 0) factory.createAccount(msg.sender);
 
         orderId = bytes32(++orderCount);
-        SealedOrder storage o = _orders[orderId];  
+        SealedOrder storage o = _orders[orderId];
         o.owner = msg.sender;
         o.account = account;
         o.market = input.market;
         o.kind = input.kind;
         o.status = Status.Open;
+        o.collateralToken = input.collateralToken;
         o.collateral = input.collateral;
         o.fallbackSlippageBps = input.fallbackSlippageBps;
 
@@ -219,7 +245,8 @@ contract SealedOrderAdapter {
         _grant(o.slippageBps, msg.sender);
         _grant(o.intakeValid, msg.sender);
 
-        uint256 protocolFeeReserve = maxProtocolFee(input.collateral);
+        // Decrease orders lock no collateral; their fee reserve is the flat decrease fee, in ETH.
+        uint256 protocolFeeReserve = increase ? maxProtocolFee(input.collateral) : decreaseFeeFlat;
         IUserAccount(account).lock(
             orderId, wnt, input.collateral, input.executionFee, EXECUTION_ATTEMPTS, protocolFeeReserve
         );
@@ -229,26 +256,25 @@ contract SealedOrderAdapter {
         );
     }
 
-    /// @notice Cancel a sealed order before it fires. Reveals only that an order existed.
-    /// @dev Also closes a fired order that GMX cancelled; the automatic re-arm (design D4) is milestone 7.
+    /// @notice Cancel a sealed order before it fires, or close one whose GMX order was cancelled.
+    ///         Before firing, reveals only that an order existed.
     function cancelOrder(bytes32 orderId) external {
         SealedOrder storage o = _orders[orderId];
         if (o.owner != msg.sender) revert NotOrderOwner(orderId);
         if (o.status != Status.Open && !(o.status == Status.Fired && _gmxCancelled(o.account, orderId))) {
             revert OrderNotOpen(orderId);
         }
-        o.status = Status.Cancelled;
-        IUserAccount(o.account).release(orderId);
+        _close(orderId, o);
         emit OrderCancelled(orderId);
     }
 
     // ─── trigger check (design §4 step 4) ─────────────────────────────────────
 
     /// @notice Evaluate orders in `market` against one verified price report. Permissionless (design D3).
-    /// @dev For each order: fired = intakeValid AND price crossed the trigger AND size within max leverage of
-    ///      the collateral at this price. Size, side and slippage are then made publicly decryptable as
-    ///      select(fired, value, 0): a non-fired check decrypts to zeros and reveals only "not yet".
-    ///      The trigger price is never decrypted.
+    /// @dev For each order: fired = intakeValid AND price crossed the trigger in the order kind's direction
+    ///      AND (for a limit entry) size within max leverage of the collateral at this price. Size, side and
+    ///      slippage are then made publicly decryptable as select(fired, value, 0): a non-fired check decrypts
+    ///      to zeros and reveals only "not yet". The trigger price is never decrypted.
     function checkBatch(address market, bytes32[] calldata orderIds, bytes calldata report) external {
         (uint256 price8, uint256 reportTimestamp) = priceVerifier.verify(market, report);
         if (reportTimestamp > block.timestamp) revert ReportFromFuture(reportTimestamp);
@@ -273,10 +299,10 @@ contract SealedOrderAdapter {
             revert CheckTooSoon(orderId, c.lastCheckAt + minCheckInterval);
         }
 
-        // Long limit entry fires at or below the trigger, short at or above.
-        ebool crossed = FHE.select(o.isLong, FHE.lte(ePrice, o.triggerPrice8), FHE.gte(ePrice, o.triggerPrice8));
-        ebool leverageOk = FHE.lte(o.sizeUsd6, FHE.asEuint64(_maxSizeUsd6(o.collateral, price8)));
-        ebool fired = FHE.and(FHE.and(o.intakeValid, crossed), leverageOk);
+        ebool fired = FHE.and(o.intakeValid, _crossed(o, ePrice));
+        if (o.kind == OrderKind.LimitIncrease) {
+            fired = FHE.and(fired, FHE.lte(o.sizeUsd6, FHE.asEuint64(_maxSizeUsd6(o.collateral, price8))));
+        }
 
         c.revealedSize = FHE.select(fired, o.sizeUsd6, FHE.asEuint64(0));
         c.revealedIsLong = FHE.select(fired, o.isLong, FHE.asEbool(false));
@@ -294,11 +320,20 @@ contract SealedOrderAdapter {
         emit OrderChecked(orderId, price8, reportTimestamp);
     }
 
+    /// @dev Limit entry and stop-loss fire at or below the trigger for a long, at or above for a short;
+    ///      take-profit is the reverse. The kind is public, so only the side is selected on ciphertext.
+    function _crossed(SealedOrder storage o, euint64 ePrice) private returns (ebool) {
+        ebool below = FHE.lte(ePrice, o.triggerPrice8);
+        ebool above = FHE.gte(ePrice, o.triggerPrice8);
+        return o.kind == OrderKind.TakeProfit ? FHE.select(o.isLong, above, below) : FHE.select(o.isLong, below, above);
+    }
+
     // ─── execute (design §4 step 5) ───────────────────────────────────────────
 
     /// @notice Publish the latest check's decryptions and, if the order fired, place it on GMX. Permissionless.
     /// @dev The signatures come from CoFHE's decryption service (`decryptForTx`); publishing verifies them.
     ///      All values are re-checked against the public, independent caps before any funds move.
+    ///      Returns bytes32(0) if a stop-loss/take-profit fired but its position no longer exists (voided).
     function execute(
         bytes32 orderId,
         uint64 size,
@@ -317,39 +352,39 @@ contract SealedOrderAdapter {
         FHE.publishDecryptResult(c.revealedSlippage, slippage, slippageSignature);
         if (size == 0) revert NotFired(orderId);
 
-        gmxKey = _fire(orderId, size, isLong, slippage, c.checkPrice8);
-    }
-
-    function _fire(bytes32 orderId, uint64 size, bool isLong, uint32 slippage, uint256 price8)
-        private
-        returns (bytes32 gmxKey)
-    {
         SealedOrder storage o = _orders[orderId];
-        if (size > maxSizeUsd6 || size > _maxSizeUsd6(o.collateral, price8) || slippage > maxSlippageBps) {
+        if (size > maxSizeUsd6 || slippage > maxSlippageBps) revert ExceedsIndependentCaps(orderId);
+        if (o.kind == OrderKind.LimitIncrease && size > _maxSizeUsd6(o.collateral, c.checkPrice8)) {
             revert ExceedsIndependentCaps(orderId);
         }
 
         Fill storage f = _fills[orderId];
-        f.sizeDeltaUsd = uint256(size) * SIZE_TO_GMX;
+        f.size6 = size;
         f.isLong = isLong;
-        f.acceptablePrice = _acceptablePrice(price8, slippage, isLong);
-        f.protocolFee = uint256(size) * increaseFeeBps / BPS * WEI_PRICE8_TO_USD6 / price8;
+        f.slippage = slippage;
         o.status = Status.Fired;
+        gmxKey = _submit(orderId, o, f, c.checkPrice8, slippage);
+        if (gmxKey != bytes32(0)) {
+            emit OrderFired(orderId, gmxKey, f.sizeDeltaUsd, isLong, f.acceptablePrice, f.protocolFee);
+        }
+    }
 
-        gmxKey = IUserAccount(o.account).submit(
-            orderId,
-            IUserAccount.OrderRequest({
-                market: o.market,
-                isLong: isLong,
-                isIncrease: true,
-                sizeDeltaUsd: f.sizeDeltaUsd,
-                collateralDelta: o.collateral,
-                acceptablePrice: f.acceptablePrice,
-                callbackGasLimit: callbackGasLimit
-            })
-        );
-        f.gmxKey = gmxKey;
-        emit OrderFired(orderId, gmxKey, f.sizeDeltaUsd, isLong, f.acceptablePrice, f.protocolFee);
+    // ─── re-arm (design D4) ───────────────────────────────────────────────────
+
+    /// @notice Re-submit a fired order once after GMX cancelled it (e.g. slippage). Permissionless.
+    /// @dev Uses the price the order fired at, with the wider of the user's public fallback slippage and their
+    ///      sealed slippage, and re-runs the execute-time checks (live-position trim for decreases). Not allowed
+    ///      if the owner cancelled the GMX order themselves.
+    function rearm(bytes32 orderId) external returns (bytes32 gmxKey) {
+        SealedOrder storage o = _orders[orderId];
+        Fill storage f = _fills[orderId];
+        if (o.status != Status.Fired || f.rearmed || !_gmxCancelled(o.account, orderId)) revert NotRearmable(orderId);
+        if (IUserAccount(o.account).cancelledByOwner(orderId)) revert NotRearmable(orderId);
+
+        f.rearmed = true;
+        uint32 slippage = o.fallbackSlippageBps > f.slippage ? o.fallbackSlippageBps : f.slippage;
+        gmxKey = _submit(orderId, o, f, _checks[orderId].checkPrice8, slippage);
+        if (gmxKey != bytes32(0)) emit OrderRearmed(orderId, gmxKey, f.sizeDeltaUsd, f.acceptablePrice);
     }
 
     // ─── settle (design §4 step 7, fee-model.md) ──────────────────────────────
@@ -370,6 +405,10 @@ contract SealedOrderAdapter {
 
     // ─── views ────────────────────────────────────────────────────────────────
 
+    function orderOf(bytes32 orderId) external view returns (SealedOrder memory) {
+        return _orders[orderId];
+    }
+
     function checkOf(bytes32 orderId) external view returns (CheckState memory) {
         return _checks[orderId];
     }
@@ -378,15 +417,11 @@ contract SealedOrderAdapter {
         return _fills[orderId];
     }
 
-    function orderOf(bytes32 orderId) external view returns (SealedOrder memory) {
-        return _orders[orderId];
-    }
-
     function accountOf(address owner) external view returns (address) {
         return factory.accountOf(owner);
     }
 
-    /// @notice Protocol-fee reserve for an order: the fee on the largest position this collateral allows.
+    /// @notice Protocol-fee reserve for a limit entry: the fee on the largest position this collateral allows.
     /// @dev Sized from public values only, so the reserve reveals nothing about the sealed size (fee-model.md).
     function maxProtocolFee(uint256 collateral) public view returns (uint256) {
         return collateral * maxLeverage * increaseFeeBps / BPS;
@@ -394,21 +429,48 @@ contract SealedOrderAdapter {
 
     // ─── internal ─────────────────────────────────────────────────────────────
 
-    /// @dev Largest size (USD, 6 decimals) the collateral supports at `price8`, capped to uint64.
-    function _maxSizeUsd6(uint256 collateral, uint256 price8) private view returns (uint64) {
-        uint256 maxSize = collateral * price8 / WEI_PRICE8_TO_USD6 * maxLeverage;
-        return maxSize > type(uint64).max ? type(uint64).max : uint64(maxSize);
+    /// @dev Builds the GMX request from plaintext terms and submits it through the account. For a decrease,
+    ///      the size is trimmed to the live position (GMX rejects oversized market decreases), and if the
+    ///      position is gone the order is voided and its funds released.
+    function _submit(bytes32 orderId, SealedOrder storage o, Fill storage f, uint256 price8, uint32 slippage)
+        private
+        returns (bytes32 gmxKey)
+    {
+        bool increase = o.kind == OrderKind.LimitIncrease;
+        uint256 sizeDeltaUsd = uint256(f.size6) * SIZE_TO_GMX;
+        if (!increase) {
+            uint256 position = IUserAccount(o.account).positionSizeUsd(o.market, o.collateralToken, f.isLong);
+            if (position == 0) {
+                _close(orderId, o);
+                emit OrderVoided(orderId);
+                return bytes32(0);
+            }
+            if (sizeDeltaUsd > position) sizeDeltaUsd = position;
+        }
+
+        f.sizeDeltaUsd = sizeDeltaUsd;
+        f.acceptablePrice = _acceptablePrice(price8, slippage, f.isLong == increase);
+        f.protocolFee = increase ? uint256(f.size6) * increaseFeeBps / BPS * WEI_PRICE8_TO_USD6 / price8 : decreaseFeeFlat;
+
+        gmxKey = IUserAccount(o.account).submit(
+            orderId,
+            IUserAccount.OrderRequest({
+                market: o.market,
+                collateralToken: o.collateralToken,
+                isLong: f.isLong,
+                isIncrease: increase,
+                sizeDeltaUsd: sizeDeltaUsd,
+                collateralDelta: o.collateral,
+                acceptablePrice: f.acceptablePrice,
+                callbackGasLimit: callbackGasLimit
+            })
+        );
+        f.gmxKey = gmxKey;
     }
 
-    /// @dev GMX acceptable price per wei (30 - 18 decimals). Long increase: highest price accepted; short: lowest.
-    function _acceptablePrice(uint256 price8, uint32 slippage, bool isLong) private pure returns (uint256) {
-        uint256 p = price8 * PRICE8_TO_GMX;
-        return isLong ? p * (BPS + slippage) / BPS : p * (BPS - slippage) / BPS;
-    }
-
-    function _gmxCancelled(address account, bytes32 orderId) private view returns (bool) {
-        (IUserAccount.GmxOutcome outcome,) = IUserAccount(account).outcomeOf(orderId);
-        return outcome == IUserAccount.GmxOutcome.Cancelled || outcome == IUserAccount.GmxOutcome.Frozen;
+    function _close(bytes32 orderId, SealedOrder storage o) private {
+        o.status = Status.Cancelled;
+        IUserAccount(o.account).release(orderId);
     }
 
     /// @dev Price-independent caps only. The leverage cap needs a price and is applied in each trigger check.
@@ -416,6 +478,24 @@ contract SealedOrderAdapter {
         valid = FHE.and(FHE.gte(size, FHE.asEuint64(minSizeUsd6)), FHE.lte(size, FHE.asEuint64(maxSizeUsd6)));
         valid = FHE.and(valid, FHE.lte(slippage, FHE.asEuint32(maxSlippageBps)));
         valid = FHE.and(valid, FHE.gt(trigger, FHE.asEuint64(0)));
+    }
+
+    /// @dev Largest size (USD, 6 decimals) the collateral supports at `price8`, capped to uint64.
+    function _maxSizeUsd6(uint256 collateral, uint256 price8) private view returns (uint64) {
+        uint256 maxSize = collateral * price8 / WEI_PRICE8_TO_USD6 * maxLeverage;
+        return maxSize > type(uint64).max ? type(uint64).max : uint64(maxSize);
+    }
+
+    /// @dev GMX acceptable price per wei (30 - 18 decimals). When buying (long increase, short decrease) it is
+    ///      the highest price accepted; when selling (short increase, long decrease) the lowest.
+    function _acceptablePrice(uint256 price8, uint32 slippage, bool buying) private pure returns (uint256) {
+        uint256 p = price8 * PRICE8_TO_GMX;
+        return buying ? p * (BPS + slippage) / BPS : p * (BPS - slippage) / BPS;
+    }
+
+    function _gmxCancelled(address account, bytes32 orderId) private view returns (bool) {
+        (IUserAccount.GmxOutcome outcome,) = IUserAccount(account).outcomeOf(orderId);
+        return outcome == IUserAccount.GmxOutcome.Cancelled || outcome == IUserAccount.GmxOutcome.Frozen;
     }
 
     function _grant(ebool v, address user) private {

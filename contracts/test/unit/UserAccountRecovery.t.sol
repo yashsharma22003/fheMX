@@ -56,7 +56,12 @@ contract UserAccountRecoveryTest is Test {
     // ─── helpers ──────────────────────────────────────────────────────────────
 
     function _request(uint256 collateral) internal pure returns (IUserAccount.OrderRequest memory) {
-        return IUserAccount.OrderRequest(MARKET, true, true, SIZE, collateral, type(uint256).max, 500_000);
+        return IUserAccount.OrderRequest(MARKET, WNT, true, true, SIZE, collateral, type(uint256).max, 500_000);
+    }
+
+    function _usdcRequest(uint256 collateral) internal view returns (IUserAccount.OrderRequest memory r) {
+        r = _request(collateral);
+        r.collateralToken = address(usdc);
     }
 
     function _lockAndSubmitEth() internal returns (bytes32 gmxKey) {
@@ -89,7 +94,7 @@ contract UserAccountRecoveryTest is Test {
     function test_erc20_submitSendsTokensThroughRouterAndFeeAsEth() public {
         vm.startPrank(adapter);
         account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6);
-        account.submit(ORDER, _request(1_000e6));
+        account.submit(ORDER, _usdcRequest(1_000e6));
         vm.stopPrank();
 
         assertEq(router.lastTokenAmount(), 1_000e6);
@@ -101,7 +106,7 @@ contract UserAccountRecoveryTest is Test {
     function test_erc20_protocolFeePaidInCollateralToken() public {
         vm.startPrank(adapter);
         account.lock(ORDER, address(usdc), 1_000e6, FEE, 2, 10e6);
-        bytes32 gmxKey = account.submit(ORDER, _request(1_000e6));
+        bytes32 gmxKey = account.submit(ORDER, _usdcRequest(1_000e6));
         vm.stopPrank();
         vm.prank(gmxHandler);
         account.afterOrderExecution(gmxKey, emptyLog, emptyLog);
@@ -234,5 +239,48 @@ contract UserAccountRecoveryTest is Test {
         vm.prank(adapter);
         vm.expectRevert(IUserAccount.NotOwner.selector);
         account.closePosition(_closeRequest());
+    }
+
+    // ─── decrease orders (milestone 7) ────────────────────────────────────────
+
+    function _lockAndSubmitDecrease() internal returns (bytes32 gmxKey) {
+        _setPositionSize(WNT, 3 * SIZE);
+        IUserAccount.OrderRequest memory r = _request(0);
+        r.isIncrease = false;
+        vm.startPrank(adapter);
+        account.lock(ORDER, WNT, 0, FEE, 2, 0);
+        gmxKey = account.submit(ORDER, r);
+        vm.stopPrank();
+        dataStore.setContains(ORDER_LIST, gmxKey, true);
+        assertEq(router.lastValue(), FEE, "decrease sends only the execution fee");
+    }
+
+    function test_reconcileDecrease_executedWhenPositionShrank() public {
+        bytes32 gmxKey = _lockAndSubmitDecrease();
+        dataStore.setContains(ORDER_LIST, gmxKey, false);
+        _setPositionSize(WNT, 2 * SIZE);
+        assertEq(uint8(account.reconcile(ORDER)), uint8(IUserAccount.GmxOutcome.Executed));
+    }
+
+    function test_reconcileDecrease_cancelledWhenPositionUnchanged() public {
+        bytes32 gmxKey = _lockAndSubmitDecrease();
+        dataStore.setContains(ORDER_LIST, gmxKey, false);
+        assertEq(uint8(account.reconcile(ORDER)), uint8(IUserAccount.GmxOutcome.Cancelled));
+    }
+
+    function test_reconcileDecrease_refusesPartialChange() public {
+        bytes32 gmxKey = _lockAndSubmitDecrease();
+        dataStore.setContains(ORDER_LIST, gmxKey, false);
+        _setPositionSize(WNT, 3 * SIZE - 1); // shrank, but by less than the order: something else happened
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.CannotReconcile.selector, ORDER));
+        account.reconcile(ORDER);
+    }
+
+    function test_cancelGmxOrder_marksCancelledByOwner() public {
+        _lockAndSubmitEth();
+        assertFalse(account.cancelledByOwner(ORDER));
+        vm.prank(owner);
+        account.cancelGmxOrder(ORDER);
+        assertTrue(account.cancelledByOwner(ORDER));
     }
 }

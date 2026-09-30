@@ -16,6 +16,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
     uint16 internal constant MAX_LEVERAGE = 10;
     uint16 internal constant FEE_BPS = 10;
     uint256 internal constant MIN_EXEC_FEE = 0.0005 ether;
+    uint256 internal constant DECREASE_FEE_FLAT = 0.0001 ether;
     uint32 internal constant MAX_REPORT_AGE = 30;
     uint32 internal constant MIN_CHECK_INTERVAL = 10;
     uint32 internal constant CALLBACK_GAS_LIMIT = 500_000;
@@ -24,6 +25,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
     uint256 internal constant BOB_PKEY = 0xB0B;
 
     SealedOrderAdapter internal adapter;
+    address internal wntToken;
     MockPriceVerifier internal prices;
     CofheClient internal alice;
     CofheClient internal bob;
@@ -46,6 +48,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         bob = createCofheClient();
         bob.connect(BOB_PKEY);
         prices = new MockPriceVerifier();
+        wntToken = wnt;
 
         address[] memory markets = new address[](1);
         markets[0] = market;
@@ -60,6 +63,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
                 maxFallbackSlippageBps: MAX_FALLBACK_SLIPPAGE,
                 maxLeverage: MAX_LEVERAGE,
                 increaseFeeBps: FEE_BPS,
+                decreaseFeeFlat: DECREASE_FEE_FLAT,
                 minExecutionFee: MIN_EXEC_FEE,
                 priceVerifier: address(prices),
                 maxReportAge: MAX_REPORT_AGE,
@@ -99,6 +103,7 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         address target = address(adapter);
         input.market = market;
         input.kind = SealedOrderAdapter.OrderKind.LimitIncrease;
+        input.collateralToken = wntToken;
         input.collateral = collateral;
         input.executionFee = executionFee;
         input.fallbackSlippageBps = 800;
@@ -106,6 +111,20 @@ abstract contract SealedOrderAdapterTestBase is CofheTest {
         (input.sizeUsd6, input.sizeProof) = client.createExternalEuint64(p.size, target);
         (input.triggerPrice8, input.triggerProof) = client.createExternalEuint64(p.trigger, target);
         (input.slippageBps, input.slippageProof) = client.createExternalEuint32(p.slippage, target);
+    }
+
+    /// Stop-loss or take-profit on the account's existing position (no collateral).
+    function _decreaseInput(
+        CofheClient client,
+        address market,
+        SealedOrderAdapter.OrderKind kind,
+        address positionCollateral,
+        uint256 executionFee,
+        Plain memory p
+    ) internal returns (SealedOrderAdapter.SealedOrderInput memory input) {
+        input = _input(client, market, 0, executionFee, p);
+        input.kind = kind;
+        input.collateralToken = positionCollateral;
     }
 
     function _submitAs(CofheClient client, SealedOrderAdapter.SealedOrderInput memory input)

@@ -100,6 +100,15 @@ Markets: WETH/WETH-USDC.SG, BTC/BTC-USDC.SG, CRV/WETH-USDC.SG. No Sepolia token 
 - ERC20 collateral (USDC.SG) works with an approval to the **Router** (`0x72F1…`, not the ExchangeRouter) and `sendTokens(token, orderVault, amount)` in the multicall; `deal` works on USDC.SG in fork tests.
 - A `MarketDecrease` with `acceptablePrice = 0` (long) closes the full position; collateral returns as native ETH with `shouldUnwrapNativeToken`.
 
+## Verified on a fork (milestone 7), and testnet caveats
+
+`contracts/test/fork/SealedStopLossDemo.t.sol`, 2026-09-30:
+
+- A `MarketDecrease` with `initialCollateralDeltaAmount = 0` closing the full size returns the collateral as native ETH; a long close with `acceptablePrice` above the execution price is cancelled with `OrderNotFulfillableAtAcceptablePrice(executionPrice, acceptablePrice)`.
+- **Pending price impact:** at `bf30ebb`, an increase's price impact is held as pending on the position and applied on close. On the long-imbalanced Sepolia ETH/USD pool, a $100 long closed at $1,937 against a $2,290 oracle price. Decrease slippage bounds must account for it (known issue 14).
+- **Reserve cap:** on 2026-09-30 the ETH/USD long side was at its open-interest reserve cap (`InsufficientReserveForOpenInterest`), so no new long could open. Market keys (all 30-decimal factors): `RESERVE_FACTOR` 2.75e30, `OPEN_INTEREST_RESERVE_FACTOR` 2.7e30, `MAX_OPEN_INTEREST` $70M per side, `POSITION_IMPACT_FACTOR` 4.5e23 (positive) / 5e23 (negative), exponent 2.
+- Test fixtures in `GmxKeeperSimulator`: `ensureOpenInterestCapacity` and `disablePositionImpact` set these DataStore keys as a CONTROLLER.
+
 ## Keeper simulator (tests only)
 
 Real execution needs signed Data Streams reports, which a fork test can't produce. `contracts/test/helpers/GmxKeeperSimulator.sol` instead:

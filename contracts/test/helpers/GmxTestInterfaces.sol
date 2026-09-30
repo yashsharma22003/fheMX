@@ -35,6 +35,7 @@ interface IGmxRoleStoreMembers {
 
 interface IGmxDataStore {
     function getUint(bytes32 key) external view returns (uint256);
+    function setUint(bytes32 key, uint256 value) external returns (uint256);
     function getBytes32Count(bytes32 setKey) external view returns (uint256);
 }
 
@@ -43,6 +44,22 @@ library GmxKeys {
     bytes32 internal constant REQUEST_EXPIRATION_TIME = keccak256(abi.encode("REQUEST_EXPIRATION_TIME"));
     bytes32 internal constant ACCOUNT_ORDER_LIST = keccak256(abi.encode("ACCOUNT_ORDER_LIST"));
     bytes32 internal constant ACCOUNT_POSITION_LIST = keccak256(abi.encode("ACCOUNT_POSITION_LIST"));
+    bytes32 internal constant RESERVE_FACTOR = keccak256(abi.encode("RESERVE_FACTOR"));
+    bytes32 internal constant OPEN_INTEREST_RESERVE_FACTOR = keccak256(abi.encode("OPEN_INTEREST_RESERVE_FACTOR"));
+
+    bytes32 internal constant POSITION_IMPACT_FACTOR = keccak256(abi.encode("POSITION_IMPACT_FACTOR"));
+
+    function positionImpactFactorKey(address market, bool isPositive) internal pure returns (bytes32) {
+        return keccak256(abi.encode(POSITION_IMPACT_FACTOR, market, isPositive));
+    }
+
+    function reserveFactorKey(address market, bool isLong) internal pure returns (bytes32) {
+        return keccak256(abi.encode(RESERVE_FACTOR, market, isLong));
+    }
+
+    function openInterestReserveFactorKey(address market, bool isLong) internal pure returns (bytes32) {
+        return keccak256(abi.encode(OPEN_INTEREST_RESERVE_FACTOR, market, isLong));
+    }
 
     function accountOrderListKey(address account) internal pure returns (bytes32) {
         return keccak256(abi.encode(ACCOUNT_ORDER_LIST, account));

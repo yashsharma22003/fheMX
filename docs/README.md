@@ -1,6 +1,6 @@
 # Docs
 
-Reference for the Sealed Order Privacy Layer. Current as of 2026-09-24.
+Reference for the Sealed Order Privacy Layer. Current as of 2026-09-30.
 
 | Doc | Read it for |
 | --- | --- |
@@ -18,9 +18,9 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 
 ## Status at a glance
 
-- **Design:** v0.2, reviewed three times against GMX and Fhenix sources. Four small gaps deferred (known issues 1–4).
-- **Build:** milestones 1–5 done. End-to-end demo works on an Arbitrum Sepolia fork (sealed limit entry → encrypted trigger check → reveal → real GMX order → fill → fee); user accounts support USDC collateral, owner cancel and close, and recover from lost GMX callbacks.
-- **Next:** milestone 6 (Chainlink Data Streams verification), which needs Data Streams credentials; milestone 7 (stop-loss, take-profit, re-arm) can go first if credentials aren't ready. See [build-plan.md](build-plan.md).
+- **Design:** v0.2, reviewed three times against GMX and Fhenix sources; the four deferred gaps (known issues 1–4) are closed.
+- **Build:** milestones 1–5 and 7 done. On an Arbitrum Sepolia fork: sealed limit entries, stop-losses and take-profits fire on hidden triggers and execute on real GMX; failed fills re-arm once; accounts support USDC, owner cancel and close, and recover from lost callbacks.
+- **Next:** milestone 6 (Chainlink Data Streams verification) and milestone 8 (checker and client on live Sepolia, needs Data Streams credentials). See [build-plan.md](build-plan.md).
 
 ## Key facts
 

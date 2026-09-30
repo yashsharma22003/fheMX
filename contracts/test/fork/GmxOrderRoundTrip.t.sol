@@ -27,6 +27,7 @@ contract GmxOrderRoundTripForkTest is Test {
         string memory json = NetworkConfig.arbitrumSepolia();
         gmx = NetworkConfig.gmx(json);
         ethUsd = NetworkConfig.market(json, "ETH_USD");
+        GmxKeeperSimulator.ensureOpenInterestCapacity(gmx, ethUsd.marketToken);
         probe = new GmxAccountProbe(gmx.exchangeRouter, gmx.orderVault, gmx.wnt);
         vm.deal(address(this), 10 ether);
     }
