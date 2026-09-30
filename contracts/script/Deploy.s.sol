@@ -24,8 +24,8 @@ contract Deploy is Script {
         string memory json = vm.readFile(string.concat(vm.projectRoot(), "/../config/networks/arbitrum-sepolia.json"));
         require(block.chainid == vm.parseJsonUint(json, ".chainId"), "wrong chain");
 
-        // Anvil's first key stands in for dry runs; a live broadcast must set PRIVATE_KEY.
-        uint256 key = vm.envOr("PRIVATE_KEY", uint256(0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80));
+        // Anvil's first key stands in for dry runs; a live broadcast must set PRIVATE_KEY (with or without 0x).
+        uint256 key = _privateKey();
         address deployer = vm.addr(key);
         address feeCollector = vm.envOr("FEE_COLLECTOR", deployer);
 
@@ -44,6 +44,14 @@ contract Deploy is Script {
         d.adapter = address(adapter);
         d.factory = address(adapter.factory());
         _record(d, deployer, feeCollector);
+    }
+
+    function _privateKey() private view returns (uint256) {
+        string memory raw = vm.envOr("PRIVATE_KEY", string(""));
+        if (bytes(raw).length == 0) return 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+        bytes memory b = bytes(raw);
+        bool prefixed = b.length >= 2 && b[0] == "0" && (b[1] == "x" || b[1] == "X");
+        return vm.parseUint(prefixed ? raw : string.concat("0x", raw));
     }
 
     function _gmx(string memory json) private pure returns (UserAccount.GmxContracts memory) {

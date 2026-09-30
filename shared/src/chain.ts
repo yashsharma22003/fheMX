@@ -10,7 +10,8 @@ export const PUBLIC_RPC = "https://sepolia-rollup.arbitrum.io/rpc";
 /** viem clients for Arbitrum Sepolia, signing with `keyVar` from the environment. */
 export function clients(keyVar = "PRIVATE_KEY") {
   const transport = http(env("ARBITRUM_SEPOLIA_RPC_URL", PUBLIC_RPC));
-  const account = privateKeyToAccount(env(keyVar) as Hex);
+  const raw = env(keyVar).trim();
+  const account = privateKeyToAccount((raw.startsWith("0x") ? raw : `0x${raw}`) as Hex);
   return {
     account,
     publicClient: createPublicClient({ chain: arbitrumSepolia, transport }),
