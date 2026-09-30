@@ -8,6 +8,7 @@ Reference for the Sealed Order Privacy Layer. Current as of 2026-09-30.
 | [decisions.md](decisions.md) | Every decision and why, what it replaced, and assumptions that turned out wrong. |
 | [fee-model.md](fee-model.md) | Fee model (D6): the spec as received, plus implementation notes on where the build differs and which milestone builds each part. |
 | [build-plan.md](build-plan.md) | What's done, the proposed milestone order, open planning questions. |
+| [live-run-2026-09-30.md](live-run-2026-09-30.md) | First live run on Arbitrum Sepolia: deployed addresses, what was run, measured gas, latency and cost. |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | Deferred design gaps and environment gaps, each with its fix. |
 | [integration/gmx-v2.md](integration/gmx-v2.md) | GMX V2: live Sepolia addresses and how to re-verify them, tokens and markets, protocol behaviour we depend on, copied interfaces. |
 | [integration/cofhe.md](integration/cofhe.md) | Fhenix CoFHE: packages, components and who runs them, key custody, the contract API we use, decrypt flow, access control, testing. |
@@ -20,8 +21,8 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources; the four deferred gaps (known issues 1–4) are closed.
-- **Build:** milestones 1–7 done. On an Arbitrum Sepolia fork: sealed limit entries, stop-losses and take-profits fire on hidden triggers priced by free Chainlink Data Feeds, and execute on real GMX with slippage anchored on GMX's own fill estimate; failed fills re-arm once; accounts support USDC, owner cancel and close, and recover from lost callbacks.
-- **Next:** milestone 8, deploy to live Arbitrum Sepolia with a checker and client, and measure real latency and costs. No paid services needed. See [build-plan.md](build-plan.md).
+- **Build:** all milestones done. Deployed on live Arbitrum Sepolia (adapter `0x0cA85C203295D6fc24d2009a3F954FdeA8F07eEa`); a sealed limit entry and a sealed stop-loss ran end to end with real CoFHE decryption, the Chainlink feed and GMX keepers.
+- **Next:** per-check fee, checker hardening, more markets, mainnet readiness. See [build-plan.md](build-plan.md).
 
 ## Key facts
 

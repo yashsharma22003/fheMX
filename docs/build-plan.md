@@ -1,6 +1,6 @@
 # Build plan
 
-Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: milestones 1–7 done (6 revised to Chainlink Data Feeds); milestone 8 built and rehearsed on a local fork, live deployment waiting on a funded wallet.
+Milestone order agreed 2026-09-25. Each milestone ends with something testable, and the riskiest integration points come first. Status as of 2026-09-30: all milestones 1–8 done. Deployed and run end to end on live Arbitrum Sepolia ([live-run-2026-09-30.md](live-run-2026-09-30.md)).
 
 ## Done: setup
 
@@ -65,7 +65,7 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - `client/`: CLI for account, fund, order (local encryption with `@cofhe/sdk`), status, cancel, withdraw.
 - Adapter intake now takes **one proof for all four encrypted fields** (what `encryptInputs` returns), verified with `Impl.verifyBatchInputs`; tests use a `BatchCofheClient` helper.
 - **Rehearsed on a local anvil fork of Sepolia:** deploy succeeded; the client encrypted an order with the real CoFHE SDK and Fhenix's live verifier, and the adapter accepted the proof against the real TaskManager. `submitOrder` used 1,155,323 gas; one-order `checkBatch` 742,959 gas. Decryption can't run on a local fork (`not_publicly_allowed`: Fhenix's service checks the live chain) and waits for the live deployment.
-- Remaining: deploy live, run a full cycle, collect latency and cost numbers (design §10), then size the per-check fee (known issue 11).
+- **Live run 2026-09-30:** deployed to Arbitrum Sepolia; a sealed short limit entry fired, filled on GMX and settled; a sealed stop-loss closed it; a non-firing order was checked three times and cancelled. Real CoFHE decryption 0.64–0.98 s per value; full numbers in [live-run-2026-09-30.md](live-run-2026-09-30.md).
 
 ## Milestones
 
@@ -80,14 +80,16 @@ Agreed 2026-09-25: interface-first, so the end-to-end demo (milestone 4) comes b
 | 5 | Complete the clone ✅ | Owner cancel and manual close, ERC20 collateral, reconcile for lost callbacks. Adapter unchanged. Closes known issues 8 and 9. | `contracts/src/account` |
 | 6 | Price source ✅ (revised) | Chainlink Data Feeds verifier instead of Data Streams (D7); report-age and newer-update rules on the feed's update time. Per-check fee deferred until live costs are known. | `contracts/src/oracle` |
 | 7 | Decrease orders and re-arm ✅ | Stop-loss and take-profit, live-position size trim, `rearm()`, decrease fee (default 0). Fixes known issues 1–4. | `contracts/src/adapter`, `src/account` |
-| 8 | Checker and client, live Sepolia | Contracts deployed to Sepolia with the feed verifier; real encryption with `@cofhe/sdk`; a checker loop that calls `checkBatch` on each feed update, decrypts and executes. Produces the latency and cost numbers in design §10. No paid services needed. | `checker/`, `client/`, `contracts/script` |
+| 8 | Checker and client, live Sepolia ✅ | Contracts deployed to Sepolia with the feed verifier; real encryption with `@cofhe/sdk`; a checker loop that calls `checkBatch` on each feed update, decrypts and executes. Produces the latency and cost numbers in design §10. No paid services needed. | `checker/`, `client/`, `contracts/script` |
 
 First demo scope: limit entries only; stop-loss and take-profit arrive in milestone 7.
 
-## Open questions
+## Next candidates
 
-1. **Funded wallet.** Milestone 8's live run needs a key with Arbitrum Sepolia ETH in `.env` (about 0.05 ETH).
-2. **RPC for live Sepolia.** The public endpoint is rate-limited; a free-tier provider key (Alchemy, Infura) is better for the checker.
+1. Per-check fee (known issue 11), sized from the live numbers.
+2. Checker hardening (known issues 16, 17): own key, retry executes, batch reads, parallel decrypts, persisted cursor.
+3. More markets (known issue 10: second price for non-ETH collateral).
+4. Mainnet readiness: parameters, sequencer-uptime feed, audit.
 
 ## Working rules
 

@@ -307,14 +307,14 @@ Every Sepolia token defaults to Data Streams; none uses GMX's own signer or a pu
 
 These are facts to measure or confirm, as distinct from the design choices in Open decisions.
 
-- [ ] Decrypt round-trip latency and gas on live Arbitrum Sepolia, for a boolean-only decrypt versus the collapsed all-fields decrypt (§4). Sets the D3 minimum check interval.
-- [ ] Cost per check, split into fixed per-report costs (Data Streams verification) and per-order costs (FHE ops, decryption), to size `checkBatch` and set the D3 per-check fee.
+- [x] Decrypt round-trip latency and gas on live Arbitrum Sepolia: 0.64–0.98 s per value; check ≈ 700k gas per order (565k in a 2-order batch). See [live-run-2026-09-30.md](live-run-2026-09-30.md).
+- [x] Cost per check: ≈ 0.00004 ETH per order at 0.05 gwei, cheaper in batches; feed reads are free (D7). The per-check fee can now be sized (known issue 11).
 - [ ] Data Streams on Arbitrum Sepolia: report availability for our target markets, verification fee model, and who holds the access credentials.
 - [ ] Maximum report age that honest checkers can reliably meet (D3).
 - [ ] Who the six key-share partners are, and Fhenix's timeline for threshold decryption (§6).
 - [ ] Whether coprocessor result commitments are enforced on-chain or only logged on Arbitrum Sepolia.
 - [ ] Hard-cap values: max size, max leverage, max deviation from reference price.
-- [ ] GMX testnet keeper liveness and typical execution delay on Arbitrum Sepolia.
+- [x] GMX testnet keeper liveness: both live orders executed within one 10 s checker poll.
 - [ ] Target user segment and monetization, now scoped around limit-entry privacy (D5).
 
 ---
