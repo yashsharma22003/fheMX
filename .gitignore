@@ -10,3 +10,4 @@ dist/
 # Deploy dry runs
 deployments/*.dry-run.json
 checker/metrics.jsonl
+contracts/broadcast/**/dry-run/
