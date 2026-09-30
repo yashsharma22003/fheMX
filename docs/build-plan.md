@@ -73,7 +73,7 @@ Milestone order agreed 2026-09-25. Each milestone ends with something testable, 
 - `ChainlinkFeedPriceVerifier` is token-based with a max age per token (USDC's feed updates daily).
 - Deploy config: ETH/USD and BTC/USD markets; WETH, BTC and USDC.SG feeds. Checker and client updated (`--market`, `--collateral-token`, `fund-token`).
 - Tests: 10 multi-market unit tests; fork demo: a sealed BTC long with USDC collateral fires on the real BTC feed, fills on live GMX and pays its fee in USDC.
-- The live deployment from the first run is the pre-multi-market version; a redeploy is needed to use this live.
+- Redeployed live as v2 on 2026-09-30 and confirmed with a sealed limit entry and a stop-loss ([live-run-2026-09-30.md](live-run-2026-09-30.md#v2-redeploy-multi-market)).
 
 ## Milestones
 

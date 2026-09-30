@@ -21,7 +21,7 @@ Repo layout and commands are in the [root README](../README.md). Addresses used 
 ## Status at a glance
 
 - **Design:** v0.2, reviewed three times against GMX and Fhenix sources; the four deferred gaps (known issues 1–4) are closed.
-- **Build:** all milestones done. Deployed on live Arbitrum Sepolia (adapter `0x0cA85C203295D6fc24d2009a3F954FdeA8F07eEa`); a sealed limit entry and a sealed stop-loss ran end to end with real CoFHE decryption, the Chainlink feed and GMX keepers.
+- **Build:** all milestones done, plus multi-market support. Live on Arbitrum Sepolia as v2 (adapter `0xebC2fd3913BB7771126ea310691aBfb32F5dAB26`, markets ETH/USD and BTC/USD); sealed limit entries and stop-losses run end to end with real CoFHE decryption, Chainlink feeds and GMX keepers.
 - **Next:** per-check fee, checker hardening, more markets, mainnet readiness. See [build-plan.md](build-plan.md).
 
 ## Key facts
