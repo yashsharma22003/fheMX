@@ -1,6 +1,6 @@
 # Sealed Order Privacy Layer for GMX V2
 
-A privacy adapter that keeps conditional GMX V2 orders (limit entry, stop-loss, take-profit) sealed with Fhenix CoFHE until they fire. Target network: Arbitrum Sepolia. Docs index: [docs/README.md](docs/README.md).
+A privacy adapter that keeps conditional GMX V2 orders (limit entry, stop-loss, take-profit) sealed with Fhenix CoFHE until they fire. Target network: Arbitrum Sepolia.
 
 ## Layout
 
@@ -13,7 +13,6 @@ A privacy adapter that keeps conditional GMX V2 orders (limit entry, stop-loss, 
 | `shared/` | TypeScript library | Config and deployment loading, viem + CoFHE clients, fixed-point helpers, ABIs generated from `contracts/out`. |
 | `config/networks/` | Shared config | Network addresses (GMX, tokens, Chainlink feeds) and adapter deployment parameters, read by tests, the deploy script and the TypeScript packages. |
 | `deployments/` | Deployed addresses | Written by the deploy script. |
-| `docs/` | Docs | Design, decisions, build plan, known issues, GMX / CoFHE / Data Streams references. Index: `docs/README.md`. |
 
 ## Setup
 

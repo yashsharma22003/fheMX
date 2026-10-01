@@ -11,3 +11,6 @@ dist/
 deployments/*.dry-run.json
 checker/metrics.jsonl
 contracts/broadcast/**/dry-run/
+
+# Docs are kept locally, not in the repo
+docs/
