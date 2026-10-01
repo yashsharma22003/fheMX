@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { erc20Abi, parseAbi, zeroAddress, type Address, type Hex, type Log, type PublicClient } from 'viem'
 import { useAccount, usePublicClient, useReadContract, useReadContracts } from 'wagmi'
@@ -258,8 +258,10 @@ export function useOrders() {
   const ids = sealed.map((l) => l.args.orderId as Hex)
 
   const orders = useQuery({
-    queryKey: ['orders', owner, ids.join(','), logs.dataUpdatedAt],
+    // Keyed on the event count, not the poll time: a new key per poll left the list empty until it reloaded.
+    queryKey: ['orders', owner, ids.join(','), logs.data?.length ?? 0],
     enabled: !!client && !!owner && ids.length > 0,
+    placeholderData: keepPreviousData,
     queryFn: async (): Promise<OrderView[]> => {
       const c = client!
       const base = await c.multicall({
@@ -326,6 +328,7 @@ export function useBlockTimes(blocks: bigint[]) {
     queryKey: ['blockTimes', key.join(',')],
     enabled: !!client && key.length > 0,
     staleTime: Infinity,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const entries = await Promise.all(
         key.map(async (b) => [b, Number((await client!.getBlock({ blockNumber: BigInt(b) })).timestamp)] as const),
