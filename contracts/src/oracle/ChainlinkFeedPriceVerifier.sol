@@ -67,6 +67,7 @@ contract ChainlinkFeedPriceVerifier is IPriceVerifier {
         if (address(sequencerUptimeFeed) == address(0)) return;
         (, int256 status, uint256 startedAt,,) = sequencerUptimeFeed.latestRoundData();
         if (status != 0) revert SequencerDown(); // 0 = up, 1 = down
+        if (startedAt == 0) revert SequencerDown(); // round not initialised
         if (block.timestamp - startedAt <= sequencerGracePeriod) revert SequencerGracePeriod(startedAt);
     }
 

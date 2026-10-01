@@ -124,7 +124,8 @@ contract SealedLimitEntryFeedDemoForkTest is SealedOrderAdapterTestBase {
         );
         _checkWithFeed(orderId);
         vm.warp(block.timestamp + MIN_CHECK_INTERVAL);
-        vm.expectPartialRevert(SealedOrderAdapter.ReportNotNewer.selector);
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(orderId, SealedOrderAdapter.SkipReason.ReportNotNewer);
         _checkWithFeed(orderId); // no new feed round: nothing new to learn, so no new check
     }
 

@@ -62,6 +62,15 @@ contract ChainlinkFeedPriceVerifierTest is Test {
         v.price(WETH, "");
     }
 
+    function test_sequencerRoundNotInitialised_rejected() public {
+        vm.warp(10 hours);
+        MockAggregator seq = new MockAggregator(0);
+        seq.set(0, 0); // status "up" but startedAt 0: an invalid round
+        ChainlinkFeedPriceVerifier v = _verifier(address(seq));
+        vm.expectRevert(ChainlinkFeedPriceVerifier.SequencerDown.selector);
+        v.price(WETH, "");
+    }
+
     function test_sequencerJustRestarted_rejectedDuringGracePeriod() public {
         MockAggregator seq = new MockAggregator(0);
         seq.set(0, block.timestamp - 10 minutes);

@@ -161,8 +161,10 @@ contract SealedOrderAdapterMarketsTest is SealedOrderAdapterTestBase {
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = id;
         bytes memory report = prices.report(80_000e8, block.timestamp);
-        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.WrongMarket.selector, id, BTC_MARKET));
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(id, SealedOrderAdapter.SkipReason.WrongMarket);
         adapter.checkBatch(BTC_MARKET, ids, report);
+        assertEq(adapter.checkOf(id).lastCheckAt, 0);
     }
 
     function test_marketInfo_recordsTokenDecimals() public view {

@@ -157,20 +157,39 @@ contract SealedOrderAdapterTriggerTest is SealedOrderAdapterTestBase {
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = id;
         bytes memory report = prices.report(2_400e8, used);
-        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.ReportNotNewer.selector, id, used, used));
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(id, SealedOrderAdapter.SkipReason.ReportNotNewer);
         adapter.checkBatch(MARKET, ids, report);
+        assertEq(adapter.checkOf(id).checkPrice8, 2_500e8, "skipped: the earlier check stands");
     }
 
     function test_check_enforcesMinimumInterval() public {
         bytes32 id = _longAt(2_400e8);
         _check(MARKET, id, 2_500e8);
-        uint256 next = block.timestamp + MIN_CHECK_INTERVAL;
         vm.warp(block.timestamp + 1);
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = id;
         bytes memory report = prices.report(2_400e8, block.timestamp);
-        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.CheckTooSoon.selector, id, next));
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(id, SealedOrderAdapter.SkipReason.TooSoon);
         adapter.checkBatch(MARKET, ids, report);
+        assertEq(adapter.checkOf(id).checkPrice8, 2_500e8, "skipped: the earlier check stands");
+    }
+
+    function test_check_skipsBadOrder_checksTheRest() public {
+        bytes32 cancelled = _longAt(2_400e8);
+        bytes32 id = _longAt(2_400e8);
+        vm.prank(alice.account());
+        adapter.cancelOrder(cancelled);
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = cancelled;
+        ids[1] = id;
+        bytes memory report = prices.report(2_400e8, block.timestamp);
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(cancelled, SealedOrderAdapter.SkipReason.NotOpen);
+        adapter.checkBatch(MARKET, ids, report);
+        assertEq(_decryptCheck(id).size, 5_000e6, "the other order was still checked, and fired");
     }
 
     function test_check_rejectsUnconfiguredMarket() public {
@@ -182,11 +201,32 @@ contract SealedOrderAdapterTriggerTest is SealedOrderAdapterTestBase {
         adapter.checkBatch(address(0xB7C), ids, report);
     }
 
-    function test_check_latestCheckWins() public {
+    function test_check_fireIsStickyUntilExpired() public {
         bytes32 id = _longAt(2_400e8);
         _check(MARKET, id, 2_400e8); // fired...
-        _nextCheck(id, 2_500e8); // ...but price moved back before anyone executed
+        _nextCheck(id, 2_500e8); // ...and a re-check at a non-crossing price can't erase it
+        Decrypted memory d = _decryptCheck(id);
+        assertEq(d.size, 5_000e6);
+        _execute(id, d);
+        assertEq(adapter.fillOf(id).acceptablePrice, 2_500e8 * 1e4 * 10_050 / 10_000, "anchored on the newer check");
+    }
+
+    function test_check_expiredFireIsDropped() public {
+        bytes32 id = _longAt(2_400e8);
+        _check(MARKET, id, 2_400e8); // fired, but nobody executed in time
+        vm.warp(block.timestamp + adapter.maxReportAge() + 1);
+        _nextCheck(id, 2_500e8);
         assertEq(_decryptCheck(id).size, 0);
+    }
+
+    function test_execute_rejectsExpiredCheck() public {
+        bytes32 id = _longAt(2_400e8);
+        _check(MARKET, id, 2_400e8);
+        Decrypted memory d = _decryptCheck(id);
+        uint256 expiredAt = block.timestamp + adapter.maxReportAge();
+        vm.warp(expiredAt + 1);
+        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.CheckExpired.selector, id, expiredAt));
+        _execute(id, d);
     }
 
     // ─── execute ──────────────────────────────────────────────────────────────

@@ -128,8 +128,10 @@ contract SealedOrderAdapterCheckFeeTest is SealedOrderAdapterTestBase {
         ids[0] = id;
         bytes memory report = prices.report(2_503e8, block.timestamp);
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IUserAccount.InsufficientCheckBudget.selector, id, FEE, 0));
+        vm.expectEmit(address(adapter));
+        emit SealedOrderAdapter.CheckSkipped(id, SealedOrderAdapter.SkipReason.NoCheckBudget);
         adapter.checkBatch(MARKET, ids, report);
+        assertEq(keeper.balance, 3 * (FEE - SPREAD), "a skipped order pays nothing");
 
         vm.prank(alice.account());
         adapter.topUpCheckBudget(id, FEE);

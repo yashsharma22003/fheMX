@@ -73,6 +73,8 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
     mapping(bytes32 orderId => InFlight) private _inFlight;
     mapping(address token => uint256) private _locked;
     mapping(bytes32 orderId => bool) public cancelledByOwner;
+    /// @dev The adapter order in flight on each GMX position (one at a time, so reconcile can rely on size).
+    mapping(bytes32 positionKey => bytes32 orderId) public inFlightOn;
     uint256 public pendingCount;
     bytes32 public manualCloseKey;
 
@@ -172,6 +174,9 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
             revert DecreaseMovesNoCollateral();
         }
         _requireNoManualClose();
+        bytes32 positionKey = _positionKey(request.market, request.collateralToken, request.isLong);
+        if (inFlightOn[positionKey] != bytes32(0)) revert PositionOrderInFlight(inFlightOn[positionKey]);
+        inFlightOn[positionKey] = orderId;
 
         uint256 executionFee = l.feePerAttempt;
         l.collateral -= request.collateralDelta;
@@ -246,27 +251,14 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
 
     // ─── reconcile (known issue 9) ────────────────────────────────────────────
 
-    /// @dev Increase: executed if the position grew by at least the order size since submission; otherwise
-    ///      cancelled, but only if the collateral is actually back in this account.
+    /// @dev Increase: executed if the position grew by at least the order size since submission; cancelled if
+    ///      the position is unchanged and the collateral is back in this account.
     ///      Decrease: executed if the position shrank by at least the order size; cancelled if unchanged.
-    ///      Only adapter orders change the position while they are in flight: manual closes are blocked.
+    ///      Only this order changes the position while it is in flight: manual closes and other adapter orders
+    ///      on the same position are blocked until it settles.
     function reconcile(bytes32 orderId) external returns (GmxOutcome outcome) {
-        if (_outcomes[orderId] != GmxOutcome.Pending) revert NotInFlight(orderId);
+        (bool executed, bool cancelled) = _inferOutcome(orderId);
         bytes32 gmxKey = _gmxKeyOf[orderId];
-        if (IGmxDataStoreView(dataStore).containsBytes32(ORDER_LIST, gmxKey)) revert OrderStillAtGmx(gmxKey);
-
-        InFlight memory f = _inFlight[orderId];
-        uint256 sizeNow = positionSizeUsd(f.market, f.token, f.isLong);
-        bool executed;
-        bool cancelled;
-        if (f.isIncrease) {
-            executed = sizeNow >= f.sizeBefore + f.sizeDelta;
-            cancelled = !executed && _balanceOf(f.token) >= _locked[f.token] + f.collateralDelta;
-        } else {
-            executed = sizeNow + f.sizeDelta <= f.sizeBefore;
-            cancelled = !executed && sizeNow == f.sizeBefore;
-        }
-
         if (executed) {
             outcome = GmxOutcome.Executed;
             _onExecuted(orderId, gmxKey);
@@ -277,6 +269,23 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
             revert CannotReconcile(orderId);
         }
         emit Reconciled(orderId, outcome);
+    }
+
+    function _inferOutcome(bytes32 orderId) private view returns (bool executed, bool cancelled) {
+        if (_outcomes[orderId] != GmxOutcome.Pending) revert NotInFlight(orderId);
+        bytes32 gmxKey = _gmxKeyOf[orderId];
+        if (IGmxDataStoreView(dataStore).containsBytes32(ORDER_LIST, gmxKey)) revert OrderStillAtGmx(gmxKey);
+
+        InFlight memory f = _inFlight[orderId];
+        uint256 sizeNow = positionSizeUsd(f.market, f.token, f.isLong);
+        if (f.isIncrease) {
+            executed = sizeNow >= f.sizeBefore + f.sizeDelta;
+            cancelled = !executed && sizeNow == f.sizeBefore
+                && _balanceOf(f.token) >= _locked[f.token] + f.collateralDelta;
+        } else {
+            executed = sizeNow + f.sizeDelta <= f.sizeBefore;
+            cancelled = !executed && sizeNow == f.sizeBefore;
+        }
     }
 
     // ─── owner ────────────────────────────────────────────────────────────────
@@ -294,6 +303,18 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         if (_outcomes[orderId] != GmxOutcome.Pending) revert NotInFlight(orderId);
         cancelledByOwner[orderId] = true;
         exchangeRouter.cancelOrder(_gmxKeyOf[orderId]);
+    }
+
+    /// @notice Last resort for an order whose callback was lost and whose outcome `reconcile` can't infer
+    ///         (e.g. the position was liquidated meanwhile). Records it as cancelled without re-locking any
+    ///         collateral, and blocks a re-arm, so the order can be closed and its remaining lock freed.
+    function abandonInFlight(bytes32 orderId) external onlyOwner {
+        (bool executed, bool cancelled) = _inferOutcome(orderId);
+        if (executed || cancelled) revert CanReconcile(orderId);
+        cancelledByOwner[orderId] = true;
+        _finish(orderId);
+        _record(orderId, _gmxKeyOf[orderId], GmxOutcome.Cancelled);
+        emit InFlightAbandoned(orderId);
     }
 
     /// @notice Close or reduce a position with a GMX market decrease, paying the execution fee from free ETH.
@@ -346,14 +367,16 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
         _onCancelled(orderId, key);
     }
 
+    /// @dev A frozen order is still held by GMX (with its collateral), so it stays Pending: the owner can cancel
+    ///      it with `cancelGmxOrder`, or GMX may still execute it. Market orders, the only kind submitted here,
+    ///      are cancelled rather than frozen by GMX, so this is defensive.
     function afterOrderFrozen(bytes32 key, GmxEventUtils.EventLogData memory, GmxEventUtils.EventLogData memory)
         external
         onlyGmxController
     {
         bytes32 orderId = _orderOf[key];
         if (orderId == bytes32(0) || _outcomes[orderId] != GmxOutcome.Pending) return;
-        _finish(orderId);
-        _record(orderId, key, GmxOutcome.Frozen);
+        emit GmxOrderFrozen(orderId, key);
     }
 
     /// @dev Refunded execution fee lands in the free ETH balance.
@@ -380,7 +403,7 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
     }
 
     function positionSizeUsd(address market, address collateralToken, bool isLong) public view returns (uint256) {
-        bytes32 positionKey = keccak256(abi.encode(address(this), market, collateralToken, isLong));
+        bytes32 positionKey = _positionKey(market, collateralToken, isLong);
         return IGmxDataStoreView(dataStore).getUint(keccak256(abi.encode(positionKey, SIZE_IN_USD)));
     }
 
@@ -404,8 +427,14 @@ contract UserAccount is IUserAccount, IGmxOrderCallbackReceiver, IGmxGasFeeCallb
     }
 
     function _finish(bytes32 orderId) private {
+        InFlight memory f = _inFlight[orderId];
+        delete inFlightOn[_positionKey(f.market, f.token, f.isLong)];
         delete _inFlight[orderId];
         pendingCount -= 1;
+    }
+
+    function _positionKey(address market, address collateralToken, bool isLong) private view returns (bytes32) {
+        return keccak256(abi.encode(address(this), market, collateralToken, isLong));
     }
 
     function _record(bytes32 orderId, bytes32 gmxKey, GmxOutcome outcome) private {

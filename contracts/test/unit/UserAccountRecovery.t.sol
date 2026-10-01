@@ -276,6 +276,78 @@ contract UserAccountRecoveryTest is Test {
         account.reconcile(ORDER);
     }
 
+    // ─── one in-flight order per position, ambiguous outcomes, frozen orders ───
+
+    function test_submit_oneInFlightOrderPerPosition() public {
+        bytes32 gmxKey = _lockAndSubmitEth();
+        bytes32 other = keccak256("order-2");
+        vm.startPrank(adapter);
+        account.lock(other, WNT, 0.1 ether, FEE, 2, 0, 0);
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.PositionOrderInFlight.selector, ORDER));
+        account.submit(other, _request(0.1 ether));
+        vm.stopPrank();
+
+        vm.prank(gmxHandler);
+        account.afterOrderExecution(gmxKey, emptyLog, emptyLog);
+        vm.prank(adapter);
+        account.submit(other, _request(0.1 ether)); // free again once the first settles
+        assertEq(account.inFlightOn(keccak256(abi.encode(address(account), MARKET, WNT, true))), other);
+    }
+
+    function test_reconcile_increaseNotCancelledWhenPositionChanged() public {
+        _setPositionSize(WNT, SIZE);
+        bytes32 gmxKey = _lockAndSubmitEth();
+        dataStore.setContains(ORDER_LIST, gmxKey, false);
+        _setPositionSize(WNT, 0); // executed, then liquidated: free ETH alone must not read as "cancelled"
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.CannotReconcile.selector, ORDER));
+        account.reconcile(ORDER);
+    }
+
+    function test_abandonInFlight_onlyWhenUnreconcilable() public {
+        bytes32 gmxKey = _lockAndSubmitEth();
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.OrderStillAtGmx.selector, gmxKey));
+        account.abandonInFlight(ORDER);
+
+        dataStore.setContains(ORDER_LIST, gmxKey, false);
+        _setPositionSize(WNT, SIZE);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IUserAccount.CanReconcile.selector, ORDER));
+        account.abandonInFlight(ORDER);
+    }
+
+    function test_abandonInFlight_freesPositionAndBlocksRearm() public {
+        bytes32 gmxKey = _lockAndSubmitEth();
+        dataStore.setContains(ORDER_LIST, gmxKey, false); // gone, no position, no collateral back
+
+        vm.prank(adapter);
+        vm.expectRevert(IUserAccount.NotOwner.selector);
+        account.abandonInFlight(ORDER);
+
+        vm.prank(owner);
+        account.abandonInFlight(ORDER);
+        assertEq(uint8(_outcome()), uint8(IUserAccount.GmxOutcome.Cancelled));
+        assertTrue(account.cancelledByOwner(ORDER), "no re-arm");
+        assertEq(account.pendingCount(), 0);
+        assertEq(account.lockOf(ORDER).collateral, 0, "nothing re-locked");
+
+        vm.prank(adapter);
+        account.release(ORDER);
+        assertEq(account.lockedBalance(WNT), 0);
+    }
+
+    function test_frozen_staysPendingAndOwnerCanCancel() public {
+        bytes32 gmxKey = _lockAndSubmitEth();
+        vm.prank(gmxHandler);
+        account.afterOrderFrozen(gmxKey, emptyLog, emptyLog);
+        assertEq(uint8(_outcome()), uint8(IUserAccount.GmxOutcome.Pending));
+        assertEq(account.pendingCount(), 1);
+
+        vm.prank(owner);
+        account.cancelGmxOrder(ORDER);
+        assertEq(router.lastCancelled(), gmxKey);
+    }
+
     function test_cancelGmxOrder_marksCancelledByOwner() public {
         _lockAndSubmitEth();
         assertFalse(account.cancelledByOwner(ORDER));

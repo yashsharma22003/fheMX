@@ -8,6 +8,7 @@ pragma solidity ^0.8.25;
 ///      Balances: native ETH is keyed by the WNT address; execution fees are always ETH; collateral and the
 ///      protocol-fee reserve are in the order's collateral token (WNT or an ERC20 such as USDC.SG).
 interface IUserAccount {
+    /// @dev `Frozen` is no longer recorded (a frozen GMX order stays Pending); kept so the enum's values don't shift.
     enum GmxOutcome {
         None,
         Pending,
@@ -50,6 +51,8 @@ interface IUserAccount {
     event ProtocolFeePaid(bytes32 indexed orderId, address indexed collector, uint256 amount);
     event CheckFeePaid(bytes32 indexed orderId, address indexed checker, uint256 reward, uint256 spread);
     event CheckBudgetAdded(bytes32 indexed orderId, uint256 amount);
+    event GmxOrderFrozen(bytes32 indexed orderId, bytes32 indexed gmxKey);
+    event InFlightAbandoned(bytes32 indexed orderId);
     event ManualCloseSubmitted(bytes32 indexed gmxKey, address market, address collateralToken, bool isLong, uint256 sizeDeltaUsd);
 
     error AlreadyInitialized();
@@ -72,6 +75,8 @@ interface IUserAccount {
     error ManualCloseInFlight(bytes32 gmxKey);
     error OrderStillAtGmx(bytes32 gmxKey);
     error CannotReconcile(bytes32 orderId);
+    error CanReconcile(bytes32 orderId);
+    error PositionOrderInFlight(bytes32 orderId);
     error InsufficientCheckBudget(bytes32 orderId, uint256 required, uint256 available);
 
     function initialize(address owner, address adapter) external;

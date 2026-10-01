@@ -100,7 +100,7 @@ async function checkOpenOrders(open: Hex[], now: bigint) {
     const updatedAt = await feedUpdatedAt(market);
     const check = await c.publicClient.readContract({ ...adapter, functionName: "checkOf", args: [id] });
     const due = check.lastCheckAt === 0n || now >= check.lastCheckAt + minInterval;
-    // An order without budget for one more check would revert the whole batch: leave it until topped up.
+    // The adapter skips an order without budget for one more check; leaving it out saves the gas.
     const lock = await c.publicClient.readContract({ address: known.get(id)!.account, abi: userAccountAbi, functionName: "lockOf", args: [id] });
     if (lock.checkBudget < checkFee) {
       metric("skipBudget", { orderId: id, budget: lock.checkBudget, checkFee });
@@ -137,7 +137,7 @@ async function executeIfFired(id: Hex) {
   );
 }
 
-async function followUpFiredOrder(id: Hex) {
+async function followUpFiredOrder(id: Hex, now: bigint) {
   const { account } = known.get(id)!;
   const [outcomeIndex, gmxKey] = await c.publicClient.readContract({
     address: account,
@@ -148,8 +148,12 @@ async function followUpFiredOrder(id: Hex) {
   const outcome = GmxOutcome[outcomeIndex];
   if (outcome === "Executed") {
     await send("settle", { ...adapter, functionName: "settle", args: [id] } as never, { orderId: id });
-  } else if (outcome === "Cancelled" || outcome === "Frozen") {
+  } else if (outcome === "Cancelled") {
     const fill = await c.publicClient.readContract({ ...adapter, functionName: "fillOf", args: [id] });
+    // A re-arm reuses the fired check's price, which the adapter rejects once it is older than maxReportAge.
+    const check = await c.publicClient.readContract({ ...adapter, functionName: "checkOf", args: [id] });
+    const maxAge = BigInt(await c.publicClient.readContract({ ...adapter, functionName: "maxReportAge" }));
+    if (now > check.lastCheckAt + maxAge) return;
     const ownerCancelled = await c.publicClient.readContract({
       address: account,
       abi: userAccountAbi,
@@ -184,7 +188,7 @@ async function tick() {
     const order = await c.publicClient.readContract({ ...adapter, functionName: "orderOf", args: [id] });
     const status = Status[order.status];
     if (status === "Open") open.push(id);
-    else if (status === "Fired") await followUpFiredOrder(id);
+    else if (status === "Fired") await followUpFiredOrder(id, now);
   }
   if (open.length) await checkOpenOrders(open, now);
 }

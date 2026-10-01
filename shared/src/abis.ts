@@ -939,6 +939,25 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "event",
+    "name": "CheckSkipped",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "reason",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum SealedOrderAdapter.SkipReason"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OrderCancelled",
     "inputs": [
       {
@@ -1154,7 +1173,7 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "error",
-    "name": "CheckTooSoon",
+    "name": "CheckExpired",
     "inputs": [
       {
         "name": "orderId",
@@ -1162,7 +1181,7 @@ export const sealedOrderAdapterAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "nextCheckAt",
+        "name": "expiredAt",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1305,27 +1324,6 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "error",
-    "name": "ReportNotNewer",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "reportTimestamp",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "lastReportTimestamp",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "ReportTooOld",
     "inputs": [
       {
@@ -1382,22 +1380,6 @@ export const sealedOrderAdapterAbi = [
     "type": "error",
     "name": "UnsupportedMarket",
     "inputs": [
-      {
-        "name": "market",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "WrongMarket",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
       {
         "name": "market",
         "type": "address",
@@ -1464,6 +1446,19 @@ export const userAccountAbi = [
   {
     "type": "receive",
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "abandonInFlight",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -3452,6 +3447,25 @@ export const userAccountAbi = [
   },
   {
     "type": "function",
+    "name": "inFlightOn",
+    "inputs": [
+      {
+        "name": "positionKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "initialize",
     "inputs": [
       {
@@ -4251,6 +4265,25 @@ export const userAccountAbi = [
   },
   {
     "type": "event",
+    "name": "GmxOrderFrozen",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "gmxKey",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "GmxOutcomeRecorded",
     "inputs": [
       {
@@ -4270,6 +4303,19 @@ export const userAccountAbi = [
         "type": "uint8",
         "indexed": false,
         "internalType": "enum IUserAccount.GmxOutcome"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "InFlightAbandoned",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -4485,6 +4531,17 @@ export const userAccountAbi = [
   },
   {
     "type": "error",
+    "name": "CanReconcile",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "CannotReconcile",
     "inputs": [
       {
@@ -4693,6 +4750,17 @@ export const userAccountAbi = [
     "inputs": [
       {
         "name": "gmxKey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "PositionOrderInFlight",
+    "inputs": [
+      {
+        "name": "orderId",
         "type": "bytes32",
         "internalType": "bytes32"
       }

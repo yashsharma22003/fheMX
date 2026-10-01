@@ -34,6 +34,15 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         TakeProfit
     }
 
+    /// @dev Why `checkBatch` passed over an order instead of checking it.
+    enum SkipReason {
+        NotOpen,
+        WrongMarket,
+        ReportNotNewer,
+        TooSoon,
+        NoCheckBudget
+    }
+
     enum Status {
         None,
         Open,
@@ -196,6 +205,7 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     event OrderRearmed(bytes32 indexed orderId, bytes32 indexed gmxKey, uint256 sizeDeltaUsd, uint256 acceptablePrice);
     event OrderFilled(bytes32 indexed orderId, uint256 protocolFee);
     event CheckBudgetToppedUp(bytes32 indexed orderId, uint256 amount);
+    event CheckSkipped(bytes32 indexed orderId, SkipReason reason);
 
     error UnsupportedMarket(address market);
     error ZeroCollateral();
@@ -206,12 +216,10 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     error NotOrderOwner(bytes32 orderId);
     error OrderNotOpen(bytes32 orderId);
     error InvalidConfig();
-    error WrongMarket(bytes32 orderId, address market);
     error ReportTooOld(uint256 reportTimestamp, uint256 maxAge);
     error ReportFromFuture(uint256 reportTimestamp);
-    error ReportNotNewer(bytes32 orderId, uint256 reportTimestamp, uint256 lastReportTimestamp);
-    error CheckTooSoon(bytes32 orderId, uint256 nextCheckAt);
     error NotChecked(bytes32 orderId);
+    error CheckExpired(bytes32 orderId, uint256 expiredAt);
     error NotFired(bytes32 orderId);
     error ExceedsIndependentCaps(bytes32 orderId);
     error NotFilled(bytes32 orderId);
@@ -365,7 +373,10 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     ///      to zeros and reveals only "not yet". The trigger price is never decrypted.
     /// @param report passed to the verifier for the index price (ignored by Chainlink Data Feeds)
     ///      Each order checked pays `checkFee` from its check budget: the caller gets `checkFee - checkFeeSpread`
-    ///      for its gas, the fee collector gets the spread. An order without enough budget reverts the batch.
+    ///      for its gas, the fee collector gets the spread. Orders that can't be checked (not open, other market,
+    ///      report not newer, too soon, no budget) are skipped with `CheckSkipped`, so one doesn't fail the batch.
+    ///      A fire is sticky until it expires: while the previous check is still executable, a re-check keeps the
+    ///      revealed values if that check fired, so a later non-crossing check can't erase an unexecuted fire.
     function checkBatch(address market, bytes32[] calldata orderIds, bytes calldata report) external nonReentrant {
         MarketInfo memory m = _markets[market];
         if (m.indexToken == address(0)) revert UnsupportedMarket(market);
@@ -388,18 +399,35 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         euint64 ePrice
     ) private {
         SealedOrder storage o = _orders[orderId];
-        if (o.status != Status.Open) revert OrderNotOpen(orderId);
-        if (o.market != market) revert WrongMarket(orderId, market);
-
         CheckState storage c = _checks[orderId];
-        if (reportTimestamp <= c.lastReportTimestamp) {
-            revert ReportNotNewer(orderId, reportTimestamp, c.lastReportTimestamp);
+        SkipReason reason;
+        if (o.status != Status.Open) reason = SkipReason.NotOpen;
+        else if (o.market != market) reason = SkipReason.WrongMarket;
+        else if (reportTimestamp <= c.lastReportTimestamp) reason = SkipReason.ReportNotNewer;
+        else if (c.lastCheckAt != 0 && block.timestamp < c.lastCheckAt + minCheckInterval) reason = SkipReason.TooSoon;
+        else if (checkFee != 0 && IUserAccount(o.account).lockOf(orderId).checkBudget < checkFee) {
+            reason = SkipReason.NoCheckBudget;
+        } else {
+            _checkOpen(orderId, o, c, m, price8, reportTimestamp, ePrice);
+            return;
         }
-        if (c.lastCheckAt != 0 && block.timestamp < c.lastCheckAt + minCheckInterval) {
-            revert CheckTooSoon(orderId, c.lastCheckAt + minCheckInterval);
-        }
+        emit CheckSkipped(orderId, reason);
+    }
 
+    function _checkOpen(
+        bytes32 orderId,
+        SealedOrder storage o,
+        CheckState storage c,
+        MarketInfo memory m,
+        uint256 price8,
+        uint256 reportTimestamp,
+        euint64 ePrice
+    ) private {
         ebool fired = FHE.and(o.intakeValid, _crossed(o, ePrice));
+        if (c.lastCheckAt != 0 && !_expired(c)) {
+            // The previous check fired iff its revealed size is non-zero (sizes are at least minSizeUsd6 > 0).
+            fired = FHE.or(fired, FHE.ne(c.revealedSize, FHE.asEuint64(0)));
+        }
         if (o.kind == OrderKind.LimitIncrease) {
             uint256 collateralPrice8 = o.collateralToken == m.indexToken ? price8 : _price(o.collateralToken);
             uint64 maxSize = _maxSizeUsd6(o.collateral, collateralPrice8, _tokenDecimals(m, o.collateralToken));
@@ -453,6 +481,7 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         if (_orders[orderId].status != Status.Open) revert OrderNotOpen(orderId);
         CheckState storage c = _checks[orderId];
         if (c.lastCheckAt == 0) revert NotChecked(orderId);
+        if (_expired(c)) revert CheckExpired(orderId, c.lastCheckAt + maxReportAge);
 
         FHE.publishDecryptResult(c.revealedSize, size, sizeSignature);
         FHE.publishDecryptResult(c.revealedIsLong, isLong, isLongSignature);
@@ -484,16 +513,18 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     /// @notice Re-submit a fired order once after GMX cancelled it (e.g. slippage). Permissionless.
     /// @dev Uses the price the order fired at, with the wider of the user's public fallback slippage and their
     ///      sealed slippage, and re-runs the execute-time checks (live-position trim for decreases). Not allowed
-    ///      if the owner cancelled the GMX order themselves.
+    ///      if the owner cancelled the GMX order themselves, or once the fired check has expired.
     function rearm(bytes32 orderId) external nonReentrant returns (bytes32 gmxKey) {
         SealedOrder storage o = _orders[orderId];
         Fill storage f = _fills[orderId];
         if (o.status != Status.Fired || f.rearmed || !_gmxCancelled(o.account, orderId)) revert NotRearmable(orderId);
         if (IUserAccount(o.account).cancelledByOwner(orderId)) revert NotRearmable(orderId);
+        CheckState storage c = _checks[orderId];
+        if (_expired(c)) revert CheckExpired(orderId, c.lastCheckAt + maxReportAge);
 
         f.rearmed = true;
         uint32 slippage = o.fallbackSlippageBps > f.slippage ? o.fallbackSlippageBps : f.slippage;
-        gmxKey = _submit(orderId, o, f, _checks[orderId].checkPrice8, slippage);
+        gmxKey = _submit(orderId, o, f, c.checkPrice8, slippage);
         if (gmxKey != bytes32(0)) emit OrderRearmed(orderId, gmxKey, f.sizeDeltaUsd, f.acceptablePrice);
     }
 
@@ -694,7 +725,13 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
 
     function _gmxCancelled(address account, bytes32 orderId) private view returns (bool) {
         (IUserAccount.GmxOutcome outcome,) = IUserAccount(account).outcomeOf(orderId);
-        return outcome == IUserAccount.GmxOutcome.Cancelled || outcome == IUserAccount.GmxOutcome.Frozen;
+        return outcome == IUserAccount.GmxOutcome.Cancelled;
+    }
+
+    /// @dev A check's price stays usable for `maxReportAge` after the check; after that it is too stale to
+    ///      anchor an acceptable price, and the order must fire again on a fresh check.
+    function _expired(CheckState storage c) private view returns (bool) {
+        return block.timestamp > c.lastCheckAt + maxReportAge;
     }
 
     function _grant(ebool v, address user) private {

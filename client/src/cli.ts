@@ -14,7 +14,7 @@
 //   pnpm -F client cli withdraw 0.01
 import { parseArgs } from "node:util";
 import { erc20Abi, formatEther, formatUnits, parseEther, parseUnits, toHex, pad, type Address, type Hex } from "viem";
-import { Encryptable } from "@cofhe/sdk";
+import { Encryptable, FheTypes } from "@cofhe/sdk";
 import {
   sealedOrderAdapterAbi,
   userAccountAbi,
@@ -45,6 +45,13 @@ function token(name: string): { address: Address; decimals: number; native: bool
 
 async function accountAddress() {
   return c.publicClient.readContract({ ...adapter, functionName: "accountOf", args: [c.account.address] });
+}
+
+/** Decrypts the order's encrypted intake result (granted to the owner) with a self-signed permit. */
+async function intakeValid(handle: bigint | Hex): Promise<boolean> {
+  const fhe = await cofhe(c);
+  await fhe.acp.getOrCreateSelfACP();
+  return Boolean(await fhe.decryptForView(handle, FheTypes.Bool).withACP().execute());
 }
 
 async function wait(label: string, hash: Hex) {
@@ -161,6 +168,9 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
     const check = await c.publicClient.readContract({ ...adapter, functionName: "checkOf", args: [orderId] });
     const fill = await c.publicClient.readContract({ ...adapter, functionName: "fillOf", args: [orderId] });
     console.log(`status   ${Status[o.status]}  kind ${Object.keys(OrderKind)[o.kind]}  account ${o.account}`);
+    if (Status[o.status] === "Open" && !(await intakeValid(o.intakeValid))) {
+      console.log("WARNING  this order breaks a limit (size, slippage or trigger) and can never fire; cancel it to free your funds");
+    }
     if (Status[o.status] === "Open") {
       const lock = await c.publicClient.readContract({ address: o.account, abi: userAccountAbi, functionName: "lockOf", args: [orderId] });
       const checkFee = await c.publicClient.readContract({ ...adapter, functionName: "checkFee" });

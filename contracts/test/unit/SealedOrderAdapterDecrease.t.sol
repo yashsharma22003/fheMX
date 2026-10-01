@@ -235,6 +235,19 @@ contract SealedOrderAdapterDecreaseTest is SealedOrderAdapterTestBase {
         assertEq(_account().freeBalance(WNT), 1 ether - 2 * EXEC_FEE, "only the two spent execution fees are gone");
     }
 
+    function test_rearm_notAfterFiredCheckExpired() public {
+        _setPosition(true, POSITION);
+        bytes32 id = _stopLossLong(2_300e8);
+        _gmxCancels(_fireAndExecute(id, 2_300e8));
+        uint256 expiredAt = adapter.checkOf(id).lastCheckAt + adapter.maxReportAge();
+        vm.warp(expiredAt + 1); // the price it fired at is too stale to re-submit at
+
+        vm.expectRevert(abi.encodeWithSelector(SealedOrderAdapter.CheckExpired.selector, id, expiredAt));
+        adapter.rearm(id);
+        vm.prank(alice.account());
+        adapter.cancelOrder(id); // the owner can still close it and free the funds
+    }
+
     function test_rearm_notWhileGmxOrderPendingOrFilled() public {
         _setPosition(true, POSITION);
         bytes32 id = _stopLossLong(2_300e8);
