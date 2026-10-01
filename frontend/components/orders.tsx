@@ -125,12 +125,12 @@ function OrderDetail({ order: o, unlock, refetch }: { order: OrderView; unlock: 
 
   async function cancel() {
     if (settings.confirmCancel && !window.confirm(`Cancel order #${o.num}? This reveals only that an order existed.`)) return
-    await run('Cancel order', () => writeContractAsync({ address: adapterAddress, abi: sealedOrderAdapterAbi, functionName: 'cancelOrder', args: [o.id], chainId: CHAIN_ID }), refetch)
+    await run('Cancel order', (fees) => writeContractAsync({ ...fees, address: adapterAddress, abi: sealedOrderAdapterAbi, functionName: 'cancelOrder', args: [o.id], chainId: CHAIN_ID }), refetch)
   }
   async function top() {
     let amount: bigint
     try { amount = parseEther(topUp) } catch { return }
-    await run('Top up check budget', () => writeContractAsync({ address: adapterAddress, abi: sealedOrderAdapterAbi, functionName: 'topUpCheckBudget', args: [o.id, amount], chainId: CHAIN_ID }), refetch)
+    await run('Top up check budget', (fees) => writeContractAsync({ ...fees, address: adapterAddress, abi: sealedOrderAdapterAbi, functionName: 'topUpCheckBudget', args: [o.id, amount], chainId: CHAIN_ID }), refetch)
   }
 
   return (

@@ -33,7 +33,7 @@ export function TradeView({ onSealed }: { onSealed: () => void }) {
 
   async function close(p: Position) {
     if (!acct.account) return
-    await run('Close position', () => writeContractAsync({
+    await run('Close position', (fees) => writeContractAsync({ ...fees,
       address: acct.account!,
       abi: userAccountAbi,
       functionName: 'closePosition',

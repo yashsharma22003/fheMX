@@ -163,11 +163,11 @@ export function Ticket({
   async function depositShortfall() {
     if (!need || !acct.account) return
     if (need.ethShort > 0n) {
-      await run('Deposit ETH', () => sendTransactionAsync({ to: acct.account!, value: need.ethShort, chainId: CHAIN_ID }), acct.refetch)
+      await run('Deposit ETH', (fees) => sendTransactionAsync({ ...fees, to: acct.account!, value: need.ethShort, chainId: CHAIN_ID }), acct.refetch)
     }
     if (need.tokShort > 0n) {
-      await run(`Deposit ${collateralToken.symbol}`, () =>
-        writeContractAsync({ address: collateralToken.address, abi: erc20Abi, functionName: 'transfer', args: [acct.account!, need.tokShort], chainId: CHAIN_ID }), acct.refetch)
+      await run(`Deposit ${collateralToken.symbol}`, (fees) =>
+        writeContractAsync({ ...fees, address: collateralToken.address, abi: erc20Abi, functionName: 'transfer', args: [acct.account!, need.tokShort], chainId: CHAIN_ID }), acct.refetch)
     }
   }
 
@@ -188,8 +188,9 @@ export function Ticket({
         .onStep((s) => setStep(s))
         .execute()
       setPhase('signing')
-      const ok = await run('Submit sealed order', async () => {
+      const ok = await run('Submit sealed order', async (fees) => {
         const hash = await writeContractAsync({
+          ...fees,
           address: adapterAddress,
           abi: sealedOrderAdapterAbi,
           functionName: 'submitOrder',

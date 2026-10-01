@@ -30,13 +30,13 @@ export function AccountView() {
   async function deposit() {
     let amount: bigint
     try { amount = parseUnits(depAmount, dep.decimals) } catch { return }
-    if (dep.native) await run('Deposit ETH', () => sendTransactionAsync({ to: account!, value: amount, chainId: CHAIN_ID }), refetch)
-    else await run(`Deposit ${dep.symbol}`, () => writeContractAsync({ address: dep.address, abi: erc20Abi, functionName: 'transfer', args: [account!, amount], chainId: CHAIN_ID }), refetch)
+    if (dep.native) await run('Deposit ETH', (fees) => sendTransactionAsync({ ...fees, to: account!, value: amount, chainId: CHAIN_ID }), refetch)
+    else await run(`Deposit ${dep.symbol}`, (fees) => writeContractAsync({ ...fees, address: dep.address, abi: erc20Abi, functionName: 'transfer', args: [account!, amount], chainId: CHAIN_ID }), refetch)
   }
   async function withdraw() {
     let amount: bigint
     try { amount = parseUnits(wdAmount, wd.decimals) } catch { return }
-    await run(`Withdraw ${wd.symbol}`, () => writeContractAsync({ address: account!, abi: userAccountAbi, functionName: 'withdraw', args: [wd.address, amount, owner!], chainId: CHAIN_ID }), refetch)
+    await run(`Withdraw ${wd.symbol}`, (fees) => writeContractAsync({ ...fees, address: account!, abi: userAccountAbi, functionName: 'withdraw', args: [wd.address, amount, owner!], chainId: CHAIN_ID }), refetch)
   }
 
   return (
