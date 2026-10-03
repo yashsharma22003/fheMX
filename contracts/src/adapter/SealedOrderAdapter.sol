@@ -16,22 +16,24 @@ interface IGmxDataStoreRead {
 }
 
 /// @notice Accepts sealed conditional orders for GMX V2 and fires them when their hidden trigger is crossed.
-/// @dev Order kinds: limit entry (increase), stop-loss and take-profit (decrease an existing position of the
-///      user's account). Any configured market; collateral is the market's long or short token (GMX pool tokens).
+/// @dev Order kinds: limit entry (increase), stop-loss, take-profit and trailing stop (decrease an existing
+///      position of the user's account). Any configured market; collateral is the market's long or short token (GMX pool tokens).
 ///      The index price decides triggers; the collateral price bounds leverage and converts the fee; long and
 ///      short token prices feed GMX's execution-price estimate. All come from `priceVerifier`.
 ///      Acceptable prices are anchored on GMX's own execution-price estimate at the check price (Reader), so a
 ///      market's price impact doesn't make orders fail; the user's slippage bounds movement around that fill.
 ///      Encrypted fixed-point conventions:
 ///        size:          USD with 6 decimals (euint64)  -> GMX sizeDeltaUsd = size * 1e24
-///        trigger price: USD with 8 decimals (euint64)
+///        trigger price: USD with 8 decimals (euint64); for a trailing stop, the trail in basis points
 ///        slippage:      basis points (euint32)
 ///      All parameters are immutable (design §6: no admin, caps set at deployment).
 contract SealedOrderAdapter is ReentrancyGuardTransient {
     enum OrderKind {
         LimitIncrease,
         StopLoss,
-        TakeProfit
+        TakeProfit,
+        /// @dev Decrease that fires once the price retraces the sealed trail (bps) from its best checked price
+        TrailingStop
     }
 
     /// @dev Why `checkBatch` passed over an order instead of checking it.
@@ -141,6 +143,13 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         euint32 revealedSlippage;
     }
 
+    /// @dev Trailing stop only: highest and lowest index price seen across its checks (public prices).
+    ///      Both are kept because the side is sealed.
+    struct Marks {
+        uint256 high;
+        uint256 low;
+    }
+
     /// @dev Plaintext terms once fired. `size6` is the revealed (untrimmed) size, reused by a re-arm.
     struct Fill {
         uint256 sizeDeltaUsd;
@@ -160,6 +169,8 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     bytes32 private constant SIZE_IN_USD = keccak256(abi.encode("SIZE_IN_USD"));
     bytes32 private constant SIZE_IN_TOKENS = keccak256(abi.encode("SIZE_IN_TOKENS"));
     bytes32 private constant PENDING_IMPACT_AMOUNT = keccak256(abi.encode("PENDING_IMPACT_AMOUNT"));
+    /// @dev Largest price8 a trailing stop compares in euint64: mark * (BPS + trail) must not wrap, trail < BPS
+    uint256 private constant MAX_TRAIL_PRICE8 = type(uint64).max / (2 * BPS);
 
     UserAccountFactory public immutable factory;
     address public immutable wnt;
@@ -184,6 +195,7 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     mapping(bytes32 orderId => SealedOrder) private _orders;
     mapping(bytes32 orderId => CheckState) private _checks;
     mapping(bytes32 orderId => Fill) private _fills;
+    mapping(bytes32 orderId => Marks) private _marks;
     uint256 public orderCount;
 
     event OrderSealed(
@@ -302,7 +314,7 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         o.fallbackSlippageBps = input.fallbackSlippageBps;
 
         _verifyInputs(o, input);
-        o.intakeValid = _intakeCaps(o.sizeUsd6, o.triggerPrice8, o.slippageBps);
+        o.intakeValid = _intakeCaps(input.kind, o.sizeUsd6, o.triggerPrice8, o.slippageBps);
 
         _grant(o.isLong, msg.sender);
         _grant(o.sizeUsd6, msg.sender);
@@ -423,7 +435,8 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         uint256 reportTimestamp,
         euint64 ePrice
     ) private {
-        ebool fired = FHE.and(o.intakeValid, _crossed(o, ePrice));
+        if (o.kind == OrderKind.TrailingStop) _updateMarks(_marks[orderId], price8);
+        ebool fired = FHE.and(o.intakeValid, _crossed(orderId, o, price8, ePrice));
         if (c.lastCheckAt != 0 && !_expired(c)) {
             // The previous check fired iff its revealed size is non-zero (sizes are at least minSizeUsd6 > 0).
             fired = FHE.or(fired, FHE.ne(c.revealedSize, FHE.asEuint64(0)));
@@ -457,10 +470,38 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
 
     /// @dev Limit entry and stop-loss fire at or below the trigger for a long, at or above for a short;
     ///      take-profit is the reverse. The kind is public, so only the side is selected on ciphertext.
-    function _crossed(SealedOrder storage o, euint64 ePrice) private returns (ebool) {
+    function _crossed(bytes32 orderId, SealedOrder storage o, uint256 price8, euint64 ePrice) private returns (ebool) {
+        if (o.kind == OrderKind.TrailingStop) return _trailCrossed(o, _marks[orderId], price8);
         ebool below = FHE.lte(ePrice, o.triggerPrice8);
         ebool above = FHE.gte(ePrice, o.triggerPrice8);
         return o.kind == OrderKind.TakeProfit ? FHE.select(o.isLong, above, below) : FHE.select(o.isLong, below, above);
+    }
+
+    /// @dev First check starts both marks at the check price; later checks only widen them. Updated before
+    ///      the trigger test, so a new extreme can't fire (the stop needs a retrace of trail > 0).
+    function _updateMarks(Marks storage mk, uint256 price8) private {
+        if (mk.high == 0) {
+            mk.high = price8;
+            mk.low = price8;
+        } else if (price8 > mk.high) {
+            mk.high = price8;
+        } else if (price8 < mk.low) {
+            mk.low = price8;
+        }
+    }
+
+    /// @dev Long:  price * BPS <= high * (BPS - trail)   (retraced trail below the high)
+    ///      Short: price * BPS >= low  * (BPS + trail)   (rallied trail above the low)
+    ///      No division, and the trail is never decrypted. Intake keeps 0 < trail < BPS, so BPS - trail
+    ///      doesn't wrap. Prices above MAX_TRAIL_PRICE8 would overflow euint64 and don't fire.
+    function _trailCrossed(SealedOrder storage o, Marks storage mk, uint256 price8) private returns (ebool) {
+        if (mk.high > MAX_TRAIL_PRICE8) return FHE.asEbool(false);
+        euint64 trail = o.triggerPrice8;
+        euint64 bps = FHE.asEuint64(BPS);
+        euint64 scaled = FHE.asEuint64(price8 * BPS);
+        ebool longHit = FHE.lte(scaled, FHE.mul(FHE.sub(bps, trail), FHE.asEuint64(mk.high)));
+        ebool shortHit = FHE.gte(scaled, FHE.mul(FHE.add(bps, trail), FHE.asEuint64(mk.low)));
+        return FHE.select(o.isLong, longHit, shortHit);
     }
 
     // ─── execute (design §4 step 5) ───────────────────────────────────────────
@@ -558,6 +599,11 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
         return _fills[orderId];
     }
 
+    /// @notice A trailing stop's water marks; zero before its first check and for other order kinds.
+    function marksOf(bytes32 orderId) external view returns (Marks memory) {
+        return _marks[orderId];
+    }
+
     function marketOf(address market) external view returns (MarketInfo memory) {
         return _markets[market];
     }
@@ -631,10 +677,12 @@ contract SealedOrderAdapter is ReentrancyGuardTransient {
     }
 
     /// @dev Price-independent caps only. The leverage cap needs a price and is applied in each trigger check.
-    function _intakeCaps(euint64 size, euint64 trigger, euint32 slippage) private returns (ebool valid) {
+    ///      A trailing stop's trigger is its trail, which must be under 100%.
+    function _intakeCaps(OrderKind kind, euint64 size, euint64 trigger, euint32 slippage) private returns (ebool valid) {
         valid = FHE.and(FHE.gte(size, FHE.asEuint64(minSizeUsd6)), FHE.lte(size, FHE.asEuint64(maxSizeUsd6)));
         valid = FHE.and(valid, FHE.lte(slippage, FHE.asEuint32(maxSlippageBps)));
         valid = FHE.and(valid, FHE.gt(trigger, FHE.asEuint64(0)));
+        if (kind == OrderKind.TrailingStop) valid = FHE.and(valid, FHE.lt(trigger, FHE.asEuint64(BPS)));
     }
 
     /// @dev Largest size (USD, 6 decimals) the collateral supports at `price8`, capped to uint64.

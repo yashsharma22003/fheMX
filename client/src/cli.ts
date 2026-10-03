@@ -6,6 +6,7 @@
 //   pnpm -F client cli fund 0.05
 //   pnpm -F client cli order --kind limit --side long --size 100 --trigger 2400 --slippage 100 --collateral 0.02
 //   pnpm -F client cli order --kind stop  --side long --size 100 --trigger 2300 --slippage 100
+//   pnpm -F client cli order --kind trail --side long --size 100 --trail 5 --slippage 100   (trail in %)
 //   pnpm -F client cli fund-token USDC_SG 50
 //   pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
 //   pnpm -F client cli topup 1 0.001        (add to order 1's check budget)
@@ -107,6 +108,7 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
         side: { type: "string", default: "long" },
         size: { type: "string" },
         trigger: { type: "string" },
+        trail: { type: "string" },
         slippage: { type: "string", default: "100" },
         fallback: { type: "string", default: "800" },
         collateral: { type: "string", default: "0" },
@@ -114,20 +116,32 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
         "check-budget": { type: "string", default: "0.001" },
       },
     });
-    const kind = { limit: OrderKind.LimitIncrease, stop: OrderKind.StopLoss, tp: OrderKind.TakeProfit }[values.kind!];
+    const kind = {
+      limit: OrderKind.LimitIncrease,
+      stop: OrderKind.StopLoss,
+      tp: OrderKind.TakeProfit,
+      trail: OrderKind.TrailingStop,
+    }[values.kind!];
     const marketCfg = network.markets[values.market!];
     if (!marketCfg) throw new Error(`unknown market ${values.market}; one of ${Object.keys(network.markets).join(", ")}`);
     const collateralToken = token(values["collateral-token"]!);
-    if (kind === undefined) throw new Error("--kind must be limit, stop or tp");
-    if (!values.size || !values.trigger) throw new Error("--size (USD) and --trigger (USD) are required");
+    if (kind === undefined) throw new Error("--kind must be limit, stop, tp or trail");
+    const trailing = kind === OrderKind.TrailingStop;
+    if (!values.size) throw new Error("--size (USD) is required");
+    if (trailing ? !values.trail : !values.trigger) {
+      throw new Error(trailing ? "--trail (%) is required for a trailing stop" : "--trigger (USD) is required");
+    }
+    // A trailing stop seals its trail (basis points) in the trigger field.
+    const sealedTrigger = trailing ? BigInt(Math.round(Number(values.trail) * 100)) : toPrice8(Number(values.trigger));
+    if (trailing && !(sealedTrigger > 0n && sealedTrigger < 10_000n)) throw new Error("--trail must be between 0 and 100 (%)");
 
     const fhe = await cofhe(c);
-    console.log("encrypting side, size, trigger and slippage locally…");
+    console.log(`encrypting side, size, ${trailing ? "trail" : "trigger"} and slippage locally…`);
     const [isLong, size, trigger, slippage, proof] = await fhe
       .encryptInputs([
         Encryptable.bool(values.side === "long"),
         Encryptable.uint64(toSizeUsd6(Number(values.size))),
-        Encryptable.uint64(toPrice8(Number(values.trigger))),
+        Encryptable.uint64(sealedTrigger),
         Encryptable.uint32(BigInt(values.slippage!)),
       ])
       .setConsumingContract(deployment.adapter)
@@ -178,6 +192,10 @@ const commands: Record<string, (args: string[]) => Promise<void>> = {
       console.log(`budget   ${formatEther(lock.checkBudget)} ETH${left}`);
     }
     if (check.lastCheckAt) console.log(`checked  at ${new Date(Number(check.lastCheckAt) * 1000).toISOString()}, price $${fromPrice8(check.checkPrice8)}`);
+    if (o.kind === OrderKind.TrailingStop && check.lastCheckAt) {
+      const marks = await c.publicClient.readContract({ ...adapter, functionName: "marksOf", args: [orderId] });
+      console.log(`marks    high $${fromPrice8(marks.high)}  low $${fromPrice8(marks.low)} (the stop trails these)`);
+    }
     if (fill.gmxKey !== pad("0x0", { size: 32 })) {
       const [outcome] = await c.publicClient.readContract({ address: o.account, abi: userAccountAbi, functionName: "outcomeOf", args: [orderId] });
       console.log(`fired    size $${Number(fill.sizeDeltaUsd / 10n ** 24n) / 1e6}, ${fill.isLong ? "long" : "short"}, GMX ${GmxOutcome[outcome]}${fill.rearmed ? " (re-armed)" : ""}`);

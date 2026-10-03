@@ -228,6 +228,8 @@ export interface OrderView {
   state: OrderState
   lastCheckAt: number
   checkPrice8: bigint
+  /** Trailing stop only: highest and lowest checked price (8 decimals); zero before the first check */
+  marks?: { high: bigint; low: bigint }
   checks: number
   checkBudget: bigint
   fill: { sizeDeltaUsd: bigint; isLong: boolean; slippage: number; acceptablePrice: bigint; protocolFee: bigint; gmxKey: Hex; rearmed: boolean }
@@ -278,9 +280,10 @@ export function useOrders() {
         const o = base[i * 3] as any
         const ch = base[i * 3 + 1] as any
         const f = base[i * 3 + 2] as any
-        const [lock, outcome] = await Promise.all([
+        const [lock, outcome, marks] = await Promise.all([
           c.readContract({ address: o.account, abi: userAccountAbi, functionName: 'lockOf', args: [id] }),
           c.readContract({ address: o.account, abi: userAccountAbi, functionName: 'outcomeOf', args: [id] }),
+          Number(o.kind) === 3 ? c.readContract({ ...adapter, functionName: 'marksOf', args: [id] }) : undefined,
         ])
         const events = (logs.data ?? []).filter((l) => (l.args.orderId as string | undefined) === id)
         const voided = events.some((e) => e.eventName === 'OrderVoided')
@@ -298,6 +301,7 @@ export function useOrders() {
           state: deriveState(Number(o.status), Number(outcome[0]), ch.lastCheckAt, f.rearmed, voided),
           lastCheckAt: Number(ch.lastCheckAt),
           checkPrice8: ch.checkPrice8,
+          marks,
           checks: events.filter((e) => e.eventName === 'OrderChecked').length,
           checkBudget: lock.checkBudget,
           fill: {

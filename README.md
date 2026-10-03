@@ -4,15 +4,15 @@
 
 # fheMX
 
-### Sealed Conditional Orders for GMX V2
+### Trade on GMX without showing your hand
 
-Limit, stop-loss and take-profit orders whose trigger price, size and direction remain encrypted on-chain until execution.
+Limit entries, stop-losses, take-profits and **trailing stops** whose trigger, size and direction stay encrypted on-chain until the moment they execute. No one can hunt your stop if no one can see it.
 
 ![Network](https://img.shields.io/badge/network-Arbitrum%20Sepolia-28A0F0)
 ![Protocol](https://img.shields.io/badge/protocol-GMX%20V2-1E1E2E)
 ![Encryption](https://img.shields.io/badge/encryption-Fhenix%20CoFHE-6C47FF)
 ![Solidity](https://img.shields.io/badge/solidity-0.8.25-363636)
-![Tests](https://img.shields.io/badge/tests-170%20passing-2EA44F)
+![Tests](https://img.shields.io/badge/tests-186%20passing-2EA44F)
 
 </div>
 
@@ -20,7 +20,9 @@ Limit, stop-loss and take-profit orders whose trigger price, size and direction 
 
 ## Table of Contents
 
+- [Why fheMX](#why-fhemx)
 - [Overview](#overview)
+- [Sealed Trailing Stop](#sealed-trailing-stop)
 - [Key Features](#key-features)
 - [How It Works](#how-it-works)
 - [Privacy Model](#privacy-model)
@@ -31,6 +33,25 @@ Limit, stop-loss and take-profit orders whose trigger price, size and direction 
 - [Fee Model](#fee-model)
 - [Testing](#testing)
 - [Technology Stack](#technology-stack)
+
+---
+
+## Why fheMX
+
+On a public perp exchange, every conditional order you place is information handed to the rest of the market. Bots read the order book, see where the stops cluster, and push the price there. fheMX keeps that information sealed.
+
+| If you are… | fheMX gives you |
+|---|---|
+| **A trader tired of being stopped out by wicks** | Stops that can't be targeted, because their price is never published |
+| **Running a strategy you don't want copied** | Size, side and entry levels that stay encrypted until execution |
+| **Trading size** | No visible limit orders for others to front-run or fade |
+| **Riding a trend** | A sealed trailing stop that locks in profit as the price moves, with a distance nobody else can see |
+
+**What you keep:**
+- **GMX liquidity and execution.** Orders fill as ordinary GMX V2 market orders, against the same pools and the same prices.
+- **Self-custody.** Funds sit in your own account contract. Only you can withdraw. No admin keys, no upgrades, no pause switch.
+- **No trusted operator.** Keepers run the checks without ever learning your trigger. Anyone can run one.
+- **A normal trading experience.** A web app with an order ticket, position protection buttons and an order history you can decrypt with your own wallet.
 
 ---
 
@@ -55,7 +76,35 @@ fheMX is a privacy layer for GMX V2 built on [Fhenix CoFHE](https://www.fhenix.i
 | Direction (long / short) | Public | Encrypted until execution |
 | Slippage tolerance | Public | Encrypted until execution |
 | Information per price check | Full order details | Not yet triggered |
+| Trailing-stop distance | Public | Encrypted, never decrypted |
 | Execution venue | GMX V2 | GMX V2 |
+
+---
+
+## Sealed Trailing Stop
+
+A trailing stop follows the price up and fires when it pulls back by a set percentage: it caps your loss and locks in your profit in one order. On a public exchange the trail is visible, so anyone can calculate exactly where your stop sits. In fheMX the trail is encrypted, and the contract compares against it on every price update without ever decrypting it.
+
+**Example: long ETH with a sealed 5% trail**
+
+```
+ETH price:   2400 → 2500 → 2600 → 2550 → 2470
+Highest:     2400   2500   2600   2600   2600
+Stop (−5%):  2280   2375   2470   2470   2470   ← fires at 2470
+```
+
+A fixed stop at 2280 would have handed back the whole rally. The trailing stop moved up with the price and closed the position 5% below the top.
+
+**How it works on ciphertext:** the contract tracks the highest and lowest checked price (public, since they come from the oracle) and tests
+
+```
+long:   price × 10000  ≤  highest × (10000 − trailBps)
+short:  price × 10000  ≥  lowest  × (10000 + trailBps)
+```
+
+with the trail and the side encrypted. There's no division and no decryption; each check reveals only "fired" or "not yet". When it fires, the position closes on GMX like any other fheMX stop, with the same trimming, retry and settlement.
+
+> Only FHE makes this possible. A trailing stop's trigger changes on every price update, so it can't be a one-time hidden commitment: the contract has to compare live prices against a secret it never sees.
 
 ---
 
@@ -92,8 +141,8 @@ fheMX is a privacy layer for GMX V2 built on [Fhenix CoFHE](https://www.fhenix.i
 
 | Market | Collateral | Order Types |
 |---|---|---|
-| ETH / USD | ETH, USDC | Limit entry, stop-loss, take-profit |
-| BTC / USD | BTC, USDC | Limit entry, stop-loss, take-profit |
+| ETH / USD | ETH, USDC | Limit entry, stop-loss, take-profit, trailing stop |
+| BTC / USD | BTC, USDC | Limit entry, stop-loss, take-profit, trailing stop |
 
 ---
 
@@ -152,11 +201,13 @@ sequenceDiagram
 | Stage | Publicly Visible |
 |---|---|
 | Order submission | Market, order type, collateral token and amount, execution fee, fallback slippage |
-| Each evaluation | Evaluation price and timestamp |
+| Each evaluation | Evaluation price and timestamp; for a trailing stop, the highest and lowest checked price |
 | Order execution | Size, direction and slippage (required by GMX) |
-| At no point | Trigger price |
+| At no point | Trigger price; trailing-stop distance |
 
 Every evaluation follows an identical execution path regardless of the encrypted values, so no information leaks through control flow.
+
+**Honest limits.** A stop-loss, take-profit or trailing stop protects a GMX position, and positions are public, so its side and size can be inferred from the position. For a trailing stop, the fire price together with the public high/low mark reveals the trail in hindsight; before it fires, the stop level is never revealed.
 
 ---
 
@@ -180,7 +231,7 @@ flowchart LR
 
 | Contract | Responsibility |
 |---|---|
-| `SealedOrderAdapter` | Order intake, encrypted trigger evaluation, execution, retry and settlement |
+| `SealedOrderAdapter` | Order intake, encrypted trigger evaluation (fixed and trailing), execution, retry and settlement |
 | `UserAccount` | Per-user custody, fund locking, GMX order submission and callback handling |
 | `UserAccountFactory` | Deterministic deployment of user accounts |
 | `ChainlinkFeedPriceVerifier` | Normalised oracle prices with staleness and sequencer checks |
@@ -206,10 +257,12 @@ fheMX/
 
 | Contract | Address |
 |---|---|
-| SealedOrderAdapter | [`0x683f2d0E8943424865f3A6f363454e7de649D4a3`](https://sepolia.arbiscan.io/address/0x683f2d0E8943424865f3A6f363454e7de649D4a3) |
-| UserAccountFactory | [`0x49308352e22c2541e9F14b1C3BA367F7a4FC9619`](https://sepolia.arbiscan.io/address/0x49308352e22c2541e9F14b1C3BA367F7a4FC9619) |
-| UserAccount (implementation) | [`0x0559B31B6087135A49Ac352848d396679e68ccca`](https://sepolia.arbiscan.io/address/0x0559B31B6087135A49Ac352848d396679e68ccca) |
-| ChainlinkFeedPriceVerifier | [`0x39b53b7038649947b6920b33f3FDf7FCb3764339`](https://sepolia.arbiscan.io/address/0x39b53b7038649947b6920b33f3FDf7FCb3764339) |
+| SealedOrderAdapter | [`0x70971d34B3EC574464706aa7eEbea4644bAAa687`](https://sepolia.arbiscan.io/address/0x70971d34B3EC574464706aa7eEbea4644bAAa687) |
+| UserAccountFactory | [`0x657aad5926922D59c679D45DF3F9330B3625eeEd`](https://sepolia.arbiscan.io/address/0x657aad5926922D59c679D45DF3F9330B3625eeEd) |
+| UserAccount (implementation) | [`0x69DFE8Abd2a65F543892b1105f2689E325a3E11C`](https://sepolia.arbiscan.io/address/0x69DFE8Abd2a65F543892b1105f2689E325a3E11C) |
+| ChainlinkFeedPriceVerifier | [`0x76cf60c777456F1593b295B71CD9027A86aD33af`](https://sepolia.arbiscan.io/address/0x76cf60c777456F1593b295B71CD9027A86aD33af) |
+
+> **Testnet liquidity:** GMX's Arbitrum Sepolia pools have limited open-interest capacity. If GMX cancels an order with `InsufficientReserveForOpenInterest`, that side of the market is full; try the other side, a smaller size, or the other market.
 
 ---
 
@@ -277,7 +330,7 @@ After deploying, run `pnpm abis` to regenerate the ABIs and deployment metadata 
 
 ### Web Application
 
-The web application provides order placement, order tracking with owner-side decryption, account funding and withdrawals. Orders are encrypted in the browser before submission.
+The web application provides order placement, order tracking with owner-side decryption, account funding and withdrawals. Orders are encrypted in the browser before submission. Each open position has one-click **Sealed stop-loss**, **Take-profit** and **Trailing stop** buttons, and a trailing stop's order page shows its live high/low mark and, once you unlock it, your current stop level.
 
 ### Command-Line Interface
 
@@ -291,11 +344,14 @@ pnpm -F client cli order --kind limit --side long --size 100 --trigger 2400 --sl
 # Sealed stop-loss on an existing long position
 pnpm -F client cli order --kind stop --side long --size 100 --trigger 2300 --slippage 100
 
+# Sealed trailing stop: close the long once ETH falls 5% from its highest checked price
+pnpm -F client cli order --kind trail --side long --size 100 --trail 5 --slippage 100
+
 # BTC market with USDC collateral
 pnpm -F client cli fund-token USDC_SG 50
 pnpm -F client cli order --market BTC_USD --collateral-token USDC_SG --collateral 50 --side long --size 100 --trigger 80000
 
-# Order management
+# Order management (status shows a trailing stop's high/low mark)
 pnpm -F client cli status 1
 pnpm -F client cli topup 1 0.001
 pnpm -F client cli cancel 1
@@ -320,10 +376,12 @@ pnpm -F client cli cancel 1
 | Fee | Amount | Recipient |
 |---|---|---|
 | Check fee | 0.00005 ETH per evaluation, drawn from the order's check budget | Keeper (90%), fee collector (10%) |
-| Protocol fee | 10 bps of position size for limit entries; flat fee for stop-loss and take-profit. Charged only on successful execution | Fee collector |
+| Protocol fee | 10 bps of position size for limit entries; flat fee for stop-loss, take-profit and trailing stop. Charged only on successful execution | Fee collector |
 | Execution fee | Two GMX execution fees reserved per order (initial attempt and one retry); unused fees are returned | GMX keepers |
 
 The protocol fee reserve is derived solely from public values (collateral × maximum leverage), so locked amounts reveal nothing about the encrypted position size. Amounts shown are the Arbitrum Sepolia configuration.
+
+A trailing stop only moves when it's checked, so fund its check budget for as long as you want it to trail; unused budget is returned.
 
 ---
 
@@ -336,8 +394,8 @@ pnpm test:fork     # Fork tests against Arbitrum Sepolia
 
 | Suite | Scope |
 |---|---|
-| Unit (143 tests) | Encrypted intake validation, trigger logic for every order type and direction, leverage limits, check fees, retry, check expiry, reconciliation and recovery. Runs on CoFHE mock contracts. |
-| Fork (27 tests) | End-to-end lifecycles against the live GMX V2 deployment on an Arbitrum Sepolia fork, covering limit entries, stop-losses and BTC/USDC orders through execution and settlement. |
+| Unit (157 tests) | Encrypted intake validation, trigger logic for every order type and direction (including trailing-stop ratcheting, reversal and overflow bounds), leverage limits, check fees, retry, check expiry, reconciliation and recovery. Runs on CoFHE mock contracts. |
+| Fork (29 tests) | End-to-end lifecycles against the live GMX V2 deployment on an Arbitrum Sepolia fork, covering limit entries, stop-losses, trailing stops and BTC/USDC orders through execution and settlement. |
 
 ---
 

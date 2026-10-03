@@ -29,9 +29,10 @@ export function Notice({ tone = 'violet', title, children }: { tone?: 'violet' |
   return <div className={`notice ${tone}`}><LockMark /><div><strong>{title}</strong>{children && <p>{children}</p>}</div></div>
 }
 
-export const KIND_LABEL = ['Limit entry', 'Stop-loss', 'Take-profit'] as const
+export const KIND_LABEL = ['Limit entry', 'Stop-loss', 'Take-profit', 'Trailing stop'] as const
+export const TRAILING_STOP = 3
 
-/** Limit entry and stop-loss fire at or below the trigger for longs; take-profit is the reverse. */
+/** Limit entry, stop-loss and trailing stop fire at or below the trigger for longs; take-profit is the reverse. */
 export function firesBelow(kind: number, isLong: boolean) {
   return kind === 2 ? !isLong : isLong
 }

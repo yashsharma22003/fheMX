@@ -11,7 +11,7 @@ import { ago, fromPrice8, fromUsd30, short, time, token as fmtToken, usd } from 
 import { useAdapterParams, useBlockTimes, type AdapterLog, type OrderView } from '@/lib/hooks'
 import { useSettings } from '@/lib/settings'
 import { useTx } from '@/lib/tx'
-import { KIND_LABEL, LockMark, StatusPill } from './ui'
+import { KIND_LABEL, LockMark, StatusPill, TRAILING_STOP } from './ui'
 
 interface Unlocked {
   isLong: boolean
@@ -47,7 +47,8 @@ function useUnlock() {
         [o.id]: {
           isLong: Boolean(isLong),
           size: Number(size as bigint) / 1e6,
-          trigger: Number(trigger as bigint) / 1e8,
+          // A trailing stop's trigger is its trail in basis points; shown as a percent.
+          trigger: Number(trigger as bigint) / (o.kind === TRAILING_STOP ? 100 : 1e8),
           slippage: Number(slippage as bigint) / 100,
           valid: Boolean(valid),
         },
@@ -144,7 +145,14 @@ function OrderDetail({ order: o, unlock, refetch }: { order: OrderView; unlock: 
             <>
               <div className="public-row"><span>Side</span><strong className={mine.isLong ? 'up' : 'down'}>{mine.isLong ? 'Long' : 'Short'}</strong></div>
               <div className="public-row"><span>Size</span><strong>{usd(mine.size)}</strong></div>
-              <div className="public-row"><span>Trigger</span><strong>{usd(mine.trigger)}</strong></div>
+              {o.kind === TRAILING_STOP ? (
+                <>
+                  <div className="public-row"><span>Trail</span><strong>{mine.trigger}%</strong></div>
+                  {o.marks && o.marks.high > 0n && <div className="public-row"><span>Stop now</span><strong>{usd(mine.isLong ? fromPrice8(o.marks.high) * (1 - mine.trigger / 100) : fromPrice8(o.marks.low) * (1 + mine.trigger / 100))}</strong></div>}
+                </>
+              ) : (
+                <div className="public-row"><span>Trigger</span><strong>{usd(mine.trigger)}</strong></div>
+              )}
               <div className="public-row"><span>Slippage</span><strong>{mine.slippage}%</strong></div>
               {!mine.valid && <p className="warn-text">This order breaks a limit (size, slippage or trigger) and can never fire. Cancel it to free your funds.</p>}
               <p>Decrypted with your signed permit. Nobody else can do this.</p>
@@ -159,6 +167,7 @@ function OrderDetail({ order: o, unlock, refetch }: { order: OrderView; unlock: 
           <div className="public-row"><span>Type</span><strong>{KIND_LABEL[o.kind]}</strong></div>
           <div className="public-row"><span>Collateral</span><strong>{o.kind === 0 ? `${fmtToken(o.collateral, t?.decimals ?? 18)} ${t?.symbol}` : 'none (reduces a position)'}</strong></div>
           <div className="public-row"><span>Fallback slippage</span><strong>{o.fallbackSlippageBps / 100}%</strong></div>
+          {o.kind === TRAILING_STOP && <div className="public-row"><span>High · low mark</span><strong>{o.marks && o.marks.high > 0n ? `${usd(fromPrice8(o.marks.high))} · ${usd(fromPrice8(o.marks.low))}` : 'set at first check'}</strong></div>}
           <div className="public-row handles">
             <span>Ciphertext handles</span>
             {([['side', o.handles.isLong], ['size', o.handles.size], ['trigger', o.handles.trigger], ['slippage', o.handles.slippage]] as const).map(([name, h]) => (
