@@ -541,6 +541,37 @@ export const sealedOrderAdapterAbi = [
   },
   {
     "type": "function",
+    "name": "marksOf",
+    "inputs": [
+      {
+        "name": "orderId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct SealedOrderAdapter.Marks",
+        "components": [
+          {
+            "name": "high",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "low",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "maxFallbackSlippageBps",
     "inputs": [],
     "outputs": [

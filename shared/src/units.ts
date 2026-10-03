@@ -8,6 +8,6 @@ export const toPrice8 = (usd: number): bigint => BigInt(Math.round(usd * 1e8));
 
 export const fromPrice8 = (price8: bigint): number => Number(price8) / 1e8;
 
-export const OrderKind = { LimitIncrease: 0, StopLoss: 1, TakeProfit: 2 } as const;
+export const OrderKind = { LimitIncrease: 0, StopLoss: 1, TakeProfit: 2, TrailingStop: 3 } as const;
 export const Status = ["None", "Open", "Cancelled", "Fired", "Filled"] as const;
 export const GmxOutcome = ["None", "Pending", "Executed", "Cancelled", "Frozen"] as const;

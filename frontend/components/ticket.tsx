@@ -11,10 +11,10 @@ import { parseNum, token as fmtToken, usd } from '@/lib/format'
 import { useAdapterParams, usePrice, useUserAccount, type Position } from '@/lib/hooks'
 import { useSettings } from '@/lib/settings'
 import { useTx } from '@/lib/tx'
-import { firesBelow, KIND_LABEL, LockMark } from './ui'
+import { firesBelow, KIND_LABEL, LockMark, TRAILING_STOP } from './ui'
 
 export interface TicketPrefill {
-  kind: 1 | 2
+  kind: 1 | 2 | 3
   position: Position
   nonce: number
 }
@@ -80,6 +80,7 @@ export function Ticket({
 
   const marketPositions = positions.filter((p) => p.market.key === market.key)
   const isEntry = kind === 0
+  const isTrail = kind === TRAILING_STOP
   const position = !isEntry ? marketPositions[positionIdx] : undefined
 
   // Coming from a position's "Stop-loss" / "Take-profit" button.
@@ -105,7 +106,12 @@ export function Ticket({
   const collateralPrice = usePrice(collateralToken.feed)
   const isLong = isEntry ? side === 'long' : position?.isLong ?? true
 
-  useEffect(() => onTriggerChange(parseNum(trigger) || 0), [trigger, onTriggerChange])
+  // A trailing stop's field is the trail %; chart where the stop would sit if the price peaked now.
+  useEffect(() => {
+    const n = parseNum(trigger) || 0
+    if (!isTrail) return onTriggerChange(n)
+    onTriggerChange(indexPrice && n > 0 && n < 100 ? indexPrice.price * (isLong ? 1 - n / 100 : 1 + n / 100) : 0)
+  }, [trigger, isTrail, isLong, indexPrice?.price, onTriggerChange])
 
   // ─── validation (hidden caps first: a sealed order that breaks them is accepted but can never fire) ───
   const v = useMemo(() => {
@@ -125,7 +131,9 @@ export function Ticket({
     const minSize = Number(params.minSizeUsd6) / 1e6
     const maxSize = Number(params.maxSizeUsd6) / 1e6
     if (!(sizeN >= minSize && sizeN <= maxSize)) errs.push(`Size must be between ${usd(minSize, 0)} and ${usd(maxSize, 0)}.`)
-    if (!(trigN > 0)) errs.push('Enter a trigger price.')
+    if (isTrail) {
+      if (!(trigN > 0 && trigN < 100)) errs.push('Trail must be between 0% and 100%.')
+    } else if (!(trigN > 0)) errs.push('Enter a trigger price.')
     if (!(slipN >= 0 && slipN * 100 <= Number(params.maxSlippageBps))) errs.push(`Slippage can be at most ${Number(params.maxSlippageBps) / 100}%.`)
     if (!(fbN >= 0 && fbN * 100 <= Number(params.maxFallbackSlippageBps))) errs.push(`Fallback slippage can be at most ${Number(params.maxFallbackSlippageBps) / 100}%.`)
     if (execWei < params.minExecutionFee) errs.push(`Execution fee must be at least ${formatUnits(params.minExecutionFee, 18)} ETH.`)
@@ -137,9 +145,9 @@ export function Ticket({
         leverage = sizeN / (collN * collateralPrice.price)
         if (leverage > Number(params.maxLeverage)) errs.push(`Leverage ${leverage.toFixed(2)}× is above the ${Number(params.maxLeverage)}× maximum.`)
       }
-    } else if (!position) errs.push('Open a position on this market first: stop-loss and take-profit protect an existing position.')
+    } else if (!position) errs.push('Open a position on this market first: stop-loss, take-profit and trailing stop protect an existing position.')
     return { errs, sizeN, trigN, slipN, collN, execWei, budgetWei, collWei, leverage }
-  }, [size, trigger, slippage, collateral, fallback, execFee, budget, params, isEntry, collateralToken, collateralPrice, position])
+  }, [size, trigger, slippage, collateral, fallback, execFee, budget, params, isEntry, isTrail, collateralToken, collateralPrice, position])
 
   // ─── what the account must hold ───
   const need = useMemo(() => {
@@ -181,7 +189,8 @@ export function Ticket({
         .encryptInputs([
           Encryptable.bool(isLong),
           Encryptable.uint64(BigInt(Math.round(v.sizeN * 1e6))),
-          Encryptable.uint64(BigInt(Math.round(v.trigN * 1e8))),
+          // A trailing stop seals its trail in basis points in the trigger field.
+          Encryptable.uint64(BigInt(Math.round(isTrail ? v.trigN * 100 : v.trigN * 1e8))),
           Encryptable.uint32(BigInt(Math.round(v.slipN * 100))),
         ])
         .setConsumingContract(adapterAddress)
@@ -227,7 +236,7 @@ export function Ticket({
 
   const below = firesBelow(kind, isLong)
   const asset = market.asset
-  const verb = isEntry ? (isLong ? 'Buys' : 'Sells') : kind === 1 ? 'Stops out' : 'Takes profit'
+  const verb = isEntry ? (isLong ? 'Buys' : 'Sells') : kind === 2 ? 'Takes profit' : 'Stops out'
   const checksPaid = params && params.checkFee > 0n ? v.budgetWei / params.checkFee : 0n
 
   return (
@@ -256,8 +265,13 @@ export function Ticket({
       <div className="form-grid">
         <div className="field"><label>Size <span>USD</span></label><div className="input-box"><span>$</span><input value={size} onChange={(e) => setSize(e.target.value)} disabled={busy} aria-label="Size USD" /></div>
           <small>{params ? `min ${usd(Number(params.minSizeUsd6) / 1e6, 0)} · max ${usd(Number(params.maxSizeUsd6) / 1e6, 0)}${isEntry ? ` · max ${params.maxLeverage}×` : ' · trimmed to your position'}` : '…'}</small></div>
-        <div className="field"><label>Trigger price <span>USD</span></label><div className="input-box"><span>$</span><input value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder={indexPrice ? indexPrice.price.toFixed(2) : ''} disabled={busy} aria-label="Trigger price" /></div>
-          <small>{verb} when {asset} {below ? '≤' : '≥'} trigger{indexPrice && v.trigN > 0 ? ` · now ${usd(indexPrice.price)} (${(((v.trigN - indexPrice.price) / indexPrice.price) * 100).toFixed(2)}%)` : ''}</small></div>
+        {isTrail ? (
+          <div className="field"><label>Trail <span>%</span></label><div className="input-box"><input value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder="5" disabled={busy} aria-label="Trail percent" /><span>%</span></div>
+            <small>{verb} when {asset} {isLong ? 'falls' : 'rises'} this far from its {isLong ? 'highest' : 'lowest'} checked price{indexPrice && v.trigN > 0 && v.trigN < 100 ? ` · stop starts at ${usd(indexPrice.price * (isLong ? 1 - v.trigN / 100 : 1 + v.trigN / 100))}` : ''}</small></div>
+        ) : (
+          <div className="field"><label>Trigger price <span>USD</span></label><div className="input-box"><span>$</span><input value={trigger} onChange={(e) => setTrigger(e.target.value)} placeholder={indexPrice ? indexPrice.price.toFixed(2) : ''} disabled={busy} aria-label="Trigger price" /></div>
+            <small>{verb} when {asset} {below ? '≤' : '≥'} trigger{indexPrice && v.trigN > 0 ? ` · now ${usd(indexPrice.price)} (${(((v.trigN - indexPrice.price) / indexPrice.price) * 100).toFixed(2)}%)` : ''}</small></div>
+        )}
         <div className="field"><label>Slippage <span>%</span></label><div className="input-box"><input value={slippage} onChange={(e) => setSlippage(e.target.value)} disabled={busy} aria-label="Slippage" /><span>%</span></div><small>encrypted · around GMX&apos;s expected fill</small></div>
         {isEntry && collateralPrice && v.collN > 0 && <div className="field"><label>Effective leverage</label><div className="input-box">{v.leverage.toFixed(2)}×</div><small>{usd(v.collN * collateralPrice.price)} of collateral</small></div>}
       </div>
@@ -282,9 +296,10 @@ export function Ticket({
       </details>
 
       <div className="sealed-checklist"><span className="eyebrow">Stays sealed</span>
-        <div className="check-items"><span><b>{isEntry ? '✓' : '~'}</b> Side</span><span><b>{isEntry ? '✓' : '~'}</b> Size</span><span><b>✓</b> Trigger</span><span><b>✓</b> Slippage</span></div>
+        <div className="check-items"><span><b>{isEntry ? '✓' : '~'}</b> Side</span><span><b>{isEntry ? '✓' : '~'}</b> Size</span><span><b>✓</b> {isTrail ? 'Trail' : 'Trigger'}</span><span><b>✓</b> Slippage</span></div>
         <div className="public-items"><span>Public: market</span><span>type</span><span>collateral</span><span>budget</span></div>
         {!isEntry && <small className="advanced-note">For a stop-loss or take-profit, side and size can be inferred from your public position. The trigger stays hidden.</small>}
+        {isTrail && <small className="advanced-note">The stop follows the highest (long) or lowest (short) price seen at a check, so it only moves while the order is being checked. Fund the check budget for as long as you want it to trail.</small>}
       </div>
 
       {need && isConnected && (

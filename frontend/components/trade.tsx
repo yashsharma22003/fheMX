@@ -26,7 +26,7 @@ export function TradeView({ onSealed }: { onSealed: () => void }) {
   const onTrigger = useCallback((t: number) => setTrigger(t), [])
   const freeEth = acct.balances?.find((b) => b.token.native)?.free
 
-  function protect(p: Position, kind: 1 | 2) {
+  function protect(p: Position, kind: 1 | 2 | 3) {
     setMarket(p.market)
     setPrefill({ kind, position: p, nonce: Date.now() })
   }
@@ -69,7 +69,7 @@ export function TradeView({ onSealed }: { onSealed: () => void }) {
           <PriceChart market={market} trigger={trigger} />
           <section className="panel positions-panel">
             <div className="panel-head"><div><span className="eyebrow">Your GMX positions</span><h2>{positions.length ? 'Protect with sealed exits' : 'No open positions'}</h2></div></div>
-            {positions.length === 0 ? <p className="muted">Filled limit entries appear here. Add a sealed stop-loss or take-profit to any of them.</p> : (
+            {positions.length === 0 ? <p className="muted">Filled limit entries appear here. Add a sealed stop-loss, take-profit or trailing stop to any of them.</p> : (
               <div className="positions-list">
                 {positions.map((p) => (
                   <div className="position-row" key={`${p.market.key}-${p.collateral.key}-${p.isLong}`}>
@@ -77,6 +77,7 @@ export function TradeView({ onSealed }: { onSealed: () => void }) {
                     <div className="position-actions">
                       <button className="outline-button" onClick={() => protect(p, 1)}>Sealed stop-loss</button>
                       <button className="outline-button" onClick={() => protect(p, 2)}>Take-profit</button>
+                      <button className="outline-button" onClick={() => protect(p, 3)}>Trailing stop</button>
                       <button className="text-button" onClick={() => close(p)}>Close</button>
                     </div>
                   </div>
