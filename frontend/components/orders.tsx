@@ -159,7 +159,12 @@ function OrderDetail({ order: o, unlock, refetch }: { order: OrderView; unlock: 
           <div className="public-row"><span>Type</span><strong>{KIND_LABEL[o.kind]}</strong></div>
           <div className="public-row"><span>Collateral</span><strong>{o.kind === 0 ? `${fmtToken(o.collateral, t?.decimals ?? 18)} ${t?.symbol}` : 'none (reduces a position)'}</strong></div>
           <div className="public-row"><span>Fallback slippage</span><strong>{o.fallbackSlippageBps / 100}%</strong></div>
-          <div className="public-row handles"><span>Ciphertext handles (side · size · trigger · slippage)</span><strong>{[o.handles.isLong, o.handles.size, o.handles.trigger, o.handles.slippage].map((h) => short(h, 6, 0)).join(' · ')}</strong></div>
+          <div className="public-row handles">
+            <span>Ciphertext handles</span>
+            {([['side', o.handles.isLong], ['size', o.handles.size], ['trigger', o.handles.trigger], ['slippage', o.handles.slippage]] as const).map(([name, h]) => (
+              <div key={name} className="handle-row"><span>{name}</span><code title={h}>{short(h, 10, 6)}</code></div>
+            ))}
+          </div>
           {o.submitTx && <a className="text-link" href={txUrl(o.submitTx)} target="_blank" rel="noreferrer">See it on Arbiscan ↗</a>}
         </div>
       </div>

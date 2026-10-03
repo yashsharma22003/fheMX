@@ -2,7 +2,21 @@
 
 <img src="frontend/public/icon.svg" alt="fheMX" width="80" />
 
-# fheMX
+## How it Works
+
+The protocol enables fully private limit orders on GMX V2. Users encrypt their order parameters (such as entry price, size, and direction) using Fhenix CoFHE, ensuring that the order details remain hidden from the public blockchain until the specific market conditions are met.
+
+![Architecture](diagrams/architecture.png)
+
+### Component Interaction
+
+1. **Order Creation:** Users interact with the **Frontend** or **CLI Client** to encrypt their order details locally and submit them to the on-chain **Order Book Contract**.
+2. **Keeper Monitoring:** The **Off-chain Checker (Keeper)** continuously monitors market prices via Chainlink Data Streams. It periodically calls the contract to evaluate encrypted orders against current prices.
+3. **Decryption and Execution:** If an order's trigger condition is met, the Fhenix CoFHE network allows decryption of the specific order's execution parameters. The Keeper then executes the trade on GMX V2 using the user's isolated **Account Clone Contract**.
+
+![Privacy Timeline](diagrams/privacy_timeline.png)
+
+## Layout
 
 ### Sealed Conditional Orders for GMX V2
 

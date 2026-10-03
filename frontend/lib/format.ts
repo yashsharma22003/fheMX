@@ -11,7 +11,7 @@ export const fromUsd30 = (v: bigint) => Number(v / 10n ** 24n) / 1e6
 export const token = (amount: bigint, decimals: number, digits = 4) =>
   Number(formatUnits(amount, decimals)).toLocaleString('en-US', { maximumFractionDigits: digits })
 
-export const short = (hex: string, lead = 6, tail = 4) => (hex.length > lead + tail + 2 ? `${hex.slice(0, lead)}…${hex.slice(-tail)}` : hex)
+export const short = (hex: string, lead = 6, tail = 4) => (hex.length > lead + tail + 2 ? `${hex.slice(0, lead)}…${tail ? hex.slice(-tail) : ''}` : hex)
 
 export function ago(unixSeconds: number | bigint, now = Date.now() / 1000) {
   const s = Math.max(0, Math.round(now - Number(unixSeconds)))
